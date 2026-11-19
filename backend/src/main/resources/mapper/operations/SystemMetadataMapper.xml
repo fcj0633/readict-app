@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.readict.operations.infrastructure.persistence.mapper.SystemMetadataMapper">
+  <resultMap id="metadataResult" type="com.readict.operations.infrastructure.persistence.entity.SystemMetadataEntity">
+    <id property="metadataKey" column="metadata_key"/>
+    <result property="metadataValue" column="metadata_value"/>
+    <result property="version" column="version"/>
+    <result property="updatedAt" column="updated_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+  </resultMap>
+  <select id="selectMetadata" resultMap="metadataResult">
+    SELECT metadata_key,metadata_value,version,updated_at FROM system_metadata WHERE metadata_key=#{key}
+  </select>
+  <update id="updateIfVersionMatches">
+    UPDATE system_metadata SET metadata_value=#{value},version=version+1,
+      updated_at=#{updatedAt,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+    WHERE metadata_key=#{key} AND version=#{expectedVersion}
+  </update>
+</mapper>

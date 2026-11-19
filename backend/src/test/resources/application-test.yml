@@ -1,0 +1,7 @@
+spring:
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/readict_test?characterEncoding=UTF-8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
+    hikari:
+      maximum-pool-size: 3
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml,classpath*:/mapper-test/**/*.xml

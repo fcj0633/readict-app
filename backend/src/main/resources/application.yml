@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: readict
+  datasource:
+    username: ${DB_APP_USER}
+    password: ${DB_APP_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 1
+      connection-timeout: 5000
+      validation-timeout: 2000
+      initialization-fail-timeout: 5000
+      transaction-isolation: TRANSACTION_READ_COMMITTED
+  flyway:
+    enabled: true
+    user: ${DB_MIGRATION_USER}
+    password: ${DB_MIGRATION_PASSWORD}
+    locations: classpath:db/migration
+    validate-on-migrate: true
+    baseline-on-migrate: false
+    clean-disabled: true
+  sql:
+    init:
+      mode: never
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-handlers-package: com.readict.shared.persistence.typehandler
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    local-cache-scope: STATEMENT
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: input
+server:
+  address: 127.0.0.1
+  port: 8080
+  error:
+    include-message: never
+    include-stacktrace: never
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,metadata
+logging:
+  pattern:
+    console: '%d{HH:mm:ss.SSS} %-5level [%X{requestId:-}] %logger{36} - %msg%n'
+  level:
+    com.zaxxer.hikari: WARN
+    org.springframework.jdbc: WARN
+    org.flywaydb.core.FlywayExecutor: WARN

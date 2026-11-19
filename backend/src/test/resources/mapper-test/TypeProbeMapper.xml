@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.readict.support.TypeProbeMapper">
+  <select id="roundTripUuid" resultType="java.util.UUID">
+    SELECT #{value,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler} AS value
+  </select>
+  <select id="uuidHex" resultType="java.lang.String">
+    SELECT HEX(#{value,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler})
+  </select>
+  <select id="roundTripInstant" resultType="java.time.Instant">
+    SELECT CAST(#{value,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler} AS DATETIME(3)) AS value
+  </select>
+  <select id="database" resultType="java.lang.String">SELECT DATABASE()</select>
+</mapper>
