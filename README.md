@@ -1,8 +1,8 @@
 # Readict 应用工程
 
-正式应用源码仓库。M00 已完成本机阶段验收，包含 Java 后端、React 状态页、MySQL 隔离、Flyway、MyBatis-Plus／XML、统一错误和健康检查。用户认证与其他业务模块尚未开发。
+正式应用源码仓库。M00 已完成本机阶段验收，包含 Java 后端、React 状态页、MySQL 隔离、Flyway、MyBatis-Plus／XML、统一错误和健康检查。M01 核心账号及本地模拟验证已实现并通过本机阶段验收；真实短信／邮件通道待接入，其他业务模块尚未开发。
 
-设计与详细记录统一放在平级设计仓库：[系统设计](../readict-design/docs/technical/architecture/Readict-V1.1-系统技术设计.md)、[M00 执行指导](../readict-design/docs/technical/implementation/M00-工程基础与本机环境执行文档.md)、[M00 验收记录](../readict-design/validation/implementation/m00/README.md)。这些文档不参与应用运行。
+设计与详细记录统一放在平级设计仓库：[系统设计](../readict-design/docs/technical/architecture/Readict-V1.1-系统技术设计.md)、[M00 执行指导](../readict-design/docs/technical/implementation/M00-工程基础与本机环境执行文档.md)、[M00 验收记录](../readict-design/validation/implementation/m00/README.md)。M01 见 [执行指导](../readict-design/docs/technical/implementation/M01-用户认证与个人设置执行文档.md) 和 [验收记录](../readict-design/validation/implementation/m01/README.md)。这些文档不参与应用运行。
 
 ## 工程与环境
 
@@ -28,6 +28,8 @@ $readictAppSecret = Read-Host '输入运行账号密码' -AsSecureString
 $readictMigrationSecret = Read-Host '输入迁移账号密码' -AsSecureString
 $env:DB_APP_PASSWORD = [System.Net.NetworkCredential]::new('', $readictAppSecret).Password
 $env:DB_MIGRATION_PASSWORD = [System.Net.NetworkCredential]::new('', $readictMigrationSecret).Password
+$readictRateSecret = Read-Host '输入持久保存的独立限流 HMAC 密钥（至少32字符）' -AsSecureString
+$env:AUTH_RATE_HMAC_KEY = [System.Net.NetworkCredential]::new('', $readictRateSecret).Password
 $readictSocketDirectory = Join-Path (Get-Location).Path '.local/tmp'
 New-Item -ItemType Directory -Force -Path $readictSocketDirectory | Out-Null
 $env:JAVA_TOOL_OPTIONS = "-Duser.timezone=UTC -Dfile.encoding=UTF-8 `"-Djdk.net.unixdomain.tmpdir=$readictSocketDirectory`""
@@ -36,6 +38,14 @@ $env:JAVA_TOOL_OPTIONS = "-Duser.timezone=UTC -Dfile.encoding=UTF-8 `"-Djdk.net.
 本机曾遇到 JDK 默认临时目录下的内部套接字连接失败，上述显式临时目录设置已通过验证。开发和测试使用不同终端，用完关闭终端。`backend/.env.example` 只说明变量，Spring Boot 不自动读取 `.env`。
 
 当前机器还保留一个不提交的便利脚本，可在仓库根目录执行 `. ./.local/Load-LocalEnvironment.ps1 dev` 或 `. ./.local/Load-LocalEnvironment.ps1 test` 替代上述手动步骤。新克隆不包含该脚本和密码文件，不能将它们视为仓库自带工具。
+
+## 账号与本地验证配置
+
+限流必需 `AUTH_RATE_HMAC_KEY`，缺失或少于 32 字符拒绝启动。密钥须由安全随机数生成并持久保存，不能每次启动更换。本机已生成独立的限流和验证密钥，保存在受限、忽略的 `.local/auth.json`，便利加载器会读取；新机器需自行准备。普通单测使用测试密钥。
+
+默认 `VERIFICATION_SENDER=unavailable`，验证／恢复统一返回 503，不假装发送成功。仅本机 dev 可显式设置 `VERIFICATION_SENDER=local`、`VERIFICATION_LOCAL_ENABLED=true` 和独立的 `VERIFICATION_HMAC_KEY`（至少 32 字符）启用模拟。验证码只写入当前用户专有的 `.local/verification-outbox/`，不提供取码 HTTP 接口；随机文件名、最多 100 文件、保留 10 分钟，结束后关闭开关并清理本次文件。模拟始终显示说明，真实 verified 保持 false。真实供应商适配尚未实现。
+
+数据库迁移由 Flyway 执行：V1 保留原样，V2 用户／设置、V3 Session JDBC、V4 挑战／恢复凭证／限流。框架不自动建 Session 表。开发启动将迁移 readict_dev，集成测试仅迁移 readict_test。
 
 ## 启动与停止
 
@@ -54,9 +64,9 @@ npm ci
 npm run dev
 ```
 
-打开 [本机状态页](http://127.0.0.1:5173/)。前后端只监听 127.0.0.1，端口为 5173／8080，占用即失败；Vite 保留 `/api` 路径代理到后端。各终端按 Ctrl+C 停止；若提示终止批处理，输入 Y。不停止共享 MySQL 或其他进程。
+打开 [本机状态页](http://127.0.0.1:5173/)、[注册页](http://127.0.0.1:5173/register) 或 [登录页](http://127.0.0.1:5173/login)。手机号固定 +86，接受 11 位或 +86 完整号码；不支持其他地区。前后端只监听 127.0.0.1，端口为 5173／8080，占用即失败；Vite 保留 `/api` 路径代理到后端。各终端按 Ctrl+C 停止；若提示终止批处理，输入 Y。不停止共享 MySQL 或其他进程。
 
-状态接口：`GET /api/v1/system/status`；健康检查：`GET /actuator/health/liveness`、`GET /actuator/health/readiness`。状态接口真实查询基线行；运行期依赖故障返回 503 Problem Details，启动前故障导致启动失败。匿名仅放行这三个 GET 接口，其他路径拒绝；M01 再实现认证与会话。
+状态接口：`GET /api/v1/system/status`；健康检查：`GET /actuator/health/liveness`、`GET /actuator/health/readiness`。状态接口真实查询基线行；运行期依赖故障返回 503 Problem Details，启动前故障导致启动失败。认证接口位于 `/api/v1/auth`，个人设置位于 `/api/v1/me/settings`；变更接口保留 CSRF，账号／设置需要 Session 身份。注册不自动登录，退出和改密返回 204；Session 空闲 30 分钟、绝对 7 天，改密／重置使全部旧会话失效。
 
 ## 构建与测试
 

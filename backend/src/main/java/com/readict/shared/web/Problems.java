@@ -25,6 +25,6 @@ public class Problems {
         response.setStatus(status);
         response.setContentType("application/problem+json");
         response.setCharacterEncoding("UTF-8");
-        objectMapper.writeValue(response.getOutputStream(), create(request, status, code, title, false));
+        objectMapper.writeValue(response.getOutputStream(), create(request, status, code, title, status >= 500));
     }
 }

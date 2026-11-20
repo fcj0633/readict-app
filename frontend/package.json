@@ -7,11 +7,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "tsx --test src/lib/api.test.ts"
+    "test": "tsx --test src/lib/*.test.ts src/features/auth/*.test.ts src/features/settings/*.test.ts"
   },
   "dependencies": {
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "react-router-dom": "7.18.5"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

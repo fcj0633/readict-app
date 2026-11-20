@@ -66,7 +66,7 @@ class FoundationIT {
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         assertThat(jdbc().queryForList("SELECT installed_rank,version,checksum,success FROM flyway_schema_history ORDER BY installed_rank")).isEqualTo(before);
         assertThat(jdbc().queryForObject("SELECT COUNT(*) FROM system_metadata WHERE metadata_key='application'",Integer.class)).isEqualTo(1);
-        assertThat(jdbc().queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE()",String.class)).containsExactlyInAnyOrder("system_metadata","flyway_schema_history");
+        assertThat(jdbc().queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE()",String.class)).extracting(String::toLowerCase).containsExactlyInAnyOrder("system_metadata","flyway_schema_history","app_user","user_settings","spring_session","spring_session_attributes","verification_challenge","password_reset_credential","rate_bucket");
     }
     @Test void baseMapperCrudAndXmlAgreeAtMillisecondPrecision() {
         var entity = new SystemMetadataEntity(); String key = key(); Instant time = Instant.parse("2026-11-19T03:04:05.123Z");
@@ -157,7 +157,7 @@ class FoundationIT {
         var post = client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/system/status"))
                 .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(post.statusCode()).isEqualTo(403);
-        assertThat(json.readTree(post.body()).path("code").asText()).isEqualTo("FORBIDDEN");
+        assertThat(json.readTree(post.body()).path("code").asText()).isIn("CSRF_MISSING","CSRF_INVALID");
         doThrow(new org.springframework.dao.DataAccessResourceFailureException("private SQL password"))
             .when(repository).hasApplicationBaseline();
         var unavailable = get("/api/v1/system/status"); assertThat(unavailable.statusCode()).isEqualTo(503);

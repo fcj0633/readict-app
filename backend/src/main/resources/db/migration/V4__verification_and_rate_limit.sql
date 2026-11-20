@@ -1,0 +1,65 @@
+CREATE TABLE verification_challenge (
+  id BINARY(16) NOT NULL,
+  user_id BINARY(16) NULL,
+  purpose VARCHAR(24) CHARACTER SET ascii NOT NULL,
+  identifier_type VARCHAR(8) CHARACTER SET ascii NOT NULL,
+  target_key_hmac BINARY(32) NOT NULL,
+  delivery_mode VARCHAR(16) CHARACTER SET ascii NOT NULL,
+  code_mac BINARY(32) NULL,
+  mac_key_version SMALLINT NOT NULL,
+  state VARCHAR(16) CHARACTER SET ascii NOT NULL,
+  generation INT NOT NULL DEFAULT 1,
+  attempts SMALLINT NOT NULL DEFAULT 0,
+  max_attempts SMALLINT NOT NULL DEFAULT 5,
+  auth_version BIGINT NULL,
+  created_at DATETIME(3) NOT NULL,
+  expires_at DATETIME(3) NOT NULL,
+  next_send_at DATETIME(3) NOT NULL,
+  verified_at DATETIME(3) NULL,
+  consumed_at DATETIME(3) NULL,
+  PRIMARY KEY (id),
+  KEY ix_challenge_expiry (expires_at,id),
+  KEY ix_challenge_subject (target_key_hmac,purpose,created_at),
+  KEY ix_challenge_user (user_id,purpose,state),
+  CONSTRAINT fk_challenge_user FOREIGN KEY (user_id) REFERENCES app_user(id),
+  CONSTRAINT ck_challenge_purpose CHECK (purpose IN ('VERIFY_CONTACT','PASSWORD_RESET')),
+  CONSTRAINT ck_challenge_type CHECK (identifier_type IN ('email','phone')),
+  CONSTRAINT ck_challenge_mode CHECK (delivery_mode IN ('REAL','DEV_LOCAL','DUMMY')),
+  CONSTRAINT ck_challenge_state CHECK (state IN
+    ('SENDING','SENT','UNKNOWN','FAILED','VERIFIED','CONSUMED','EXPIRED','LOCKED','SUPERSEDED')),
+  CONSTRAINT ck_challenge_attempt CHECK (attempts >= 0 AND attempts <= max_attempts AND max_attempts > 0),
+  CONSTRAINT ck_challenge_time CHECK (expires_at > created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE password_reset_credential (
+  id BINARY(16) NOT NULL,
+  user_id BINARY(16) NOT NULL,
+  challenge_id BINARY(16) NOT NULL,
+  token_hash BINARY(32) NOT NULL,
+  auth_version BIGINT NOT NULL,
+  proof_mode VARCHAR(16) CHARACTER SET ascii NOT NULL,
+  created_at DATETIME(3) NOT NULL,
+  expires_at DATETIME(3) NOT NULL,
+  consumed_at DATETIME(3) NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_reset_hash (token_hash),
+  UNIQUE KEY uk_reset_challenge (challenge_id),
+  KEY ix_reset_expiry (expires_at,id),
+  KEY ix_reset_user (user_id,consumed_at),
+  CONSTRAINT fk_reset_user FOREIGN KEY (user_id) REFERENCES app_user(id),
+  CONSTRAINT fk_reset_challenge FOREIGN KEY (challenge_id) REFERENCES verification_challenge(id),
+  CONSTRAINT ck_reset_mode CHECK (proof_mode IN ('REAL','DEV_LOCAL')),
+  CONSTRAINT ck_reset_time CHECK (expires_at > created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE rate_bucket (
+  scope VARCHAR(32) CHARACTER SET ascii NOT NULL,
+  key_hmac BINARY(32) NOT NULL,
+  window_start DATETIME(3) NOT NULL,
+  counter INT NOT NULL,
+  reserved_chars BIGINT NOT NULL DEFAULT 0,
+  expires_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (scope,key_hmac,window_start),
+  KEY ix_rate_expiry (expires_at),
+  CONSTRAINT ck_rate_counter CHECK (counter >= 0 AND reserved_chars >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.readict.settings.infrastructure.persistence.mapper.SettingsMapper">
+  <resultMap id="entity" type="com.readict.settings.infrastructure.persistence.entity.SettingsEntity">
+    <result property="userId" column="user_id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="font" column="font"/>
+    <result property="fontSize" column="font_size"/>
+    <result property="lineHeight" column="line_height"/>
+    <result property="contentWidth" column="content_width"/>
+    <result property="theme" column="theme"/>
+    <result property="pronunciation" column="pronunciation"/>
+    <result property="version" column="version"/>
+    <result property="lastRequestId" column="last_request_id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="lastRequestHash" column="last_request_hash"/>
+    <result property="updatedAt" column="updated_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+  </resultMap>
+  <select id="lockSettings" resultMap="entity">SELECT user_id,font,font_size,line_height,content_width,theme,pronunciation,version,last_request_id,last_request_hash,updated_at FROM user_settings WHERE user_id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler} FOR UPDATE</select>
+  <update id="saveVersion">UPDATE user_settings SET font=#{value.font},font_size=#{value.fontSize},line_height=#{value.lineHeight},content_width=#{value.contentWidth},theme=#{value.theme},pronunciation=#{value.pronunciation},version=version+1,last_request_id=#{value.lastRequestId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler},last_request_hash=#{value.lastRequestHash},updated_at=#{value.updatedAt} WHERE user_id=#{value.userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler} AND version=#{expected}</update>
+</mapper>

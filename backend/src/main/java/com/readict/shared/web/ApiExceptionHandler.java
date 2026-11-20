@@ -13,9 +13,17 @@ import com.readict.operations.application.SystemNotReadyException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(com.readict.identity.domain.DomainProblem.class)
+    public ResponseEntity<ProblemDetail> domain(com.readict.identity.domain.DomainProblem problem,HttpServletRequest request) {
+        var builder=ResponseEntity.status(problem.status()).contentType(MediaType.APPLICATION_PROBLEM_JSON);
+        if(problem.retryAfter()>0) builder.header("Retry-After",Integer.toString(problem.retryAfter()));
+        return builder.body(Problems.create(request,problem.status(),problem.code(),problem.getMessage(),problem.status()>=500 || problem.status()==429));
+    }
+
     @ExceptionHandler({SystemNotReadyException.class, DataAccessException.class, TransactionException.class})
     public ResponseEntity<ProblemDetail> notReady(Exception ex, HttpServletRequest request) {
-        return response(request, 503, "SYSTEM_NOT_READY", "服务暂未就绪", true);
+        boolean authentication=request.getRequestURI().startsWith("/api/v1/auth/") || request.getRequestURI().startsWith("/api/v1/me/");
+        return response(request,503,authentication?"AUTH_DEPENDENCY_UNAVAILABLE":"SYSTEM_NOT_READY","服务暂未就绪",true);
     }
     @ExceptionHandler({MethodArgumentNotValidException.class, MethodArgumentTypeMismatchException.class,
             HttpMessageNotReadableException.class, ConstraintViolationException.class, ServletRequestBindingException.class})

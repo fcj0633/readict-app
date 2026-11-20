@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.readict.identity.infrastructure.persistence.mapper.ChallengeMapper">
+  <resultMap id="entity" type="com.readict.identity.infrastructure.persistence.entity.ChallengeEntity">
+    <result property="id" column="id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="userId" column="user_id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="purpose" column="purpose"/>
+    <result property="identifierType" column="identifier_type"/>
+    <result property="targetKeyHmac" column="target_key_hmac"/>
+    <result property="deliveryMode" column="delivery_mode"/>
+    <result property="codeMac" column="code_mac"/>
+    <result property="macKeyVersion" column="mac_key_version"/>
+    <result property="state" column="state"/>
+    <result property="generation" column="generation"/>
+    <result property="attempts" column="attempts"/>
+    <result property="maxAttempts" column="max_attempts"/>
+    <result property="authVersion" column="auth_version"/>
+    <result property="createdAt" column="created_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+    <result property="expiresAt" column="expires_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+    <result property="nextSendAt" column="next_send_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+    <result property="verifiedAt" column="verified_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+    <result property="consumedAt" column="consumed_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+  </resultMap>
+  <select id="latest" resultMap="entity">SELECT id,user_id,purpose,identifier_type,target_key_hmac,delivery_mode,code_mac,mac_key_version,state,generation,attempts,max_attempts,auth_version,created_at,expires_at,next_send_at,verified_at,consumed_at FROM verification_challenge WHERE target_key_hmac=#{target} AND purpose=#{purpose} ORDER BY created_at DESC,id DESC LIMIT 1</select>
+  <select id="lockChallenge" resultMap="entity">SELECT id,user_id,purpose,identifier_type,target_key_hmac,delivery_mode,code_mac,mac_key_version,state,generation,attempts,max_attempts,auth_version,created_at,expires_at,next_send_at,verified_at,consumed_at FROM verification_challenge WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler} FOR UPDATE</select>
+  <update id="supersedeUser">UPDATE verification_challenge SET state='SUPERSEDED' WHERE user_id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler} AND state IN ('SENDING','SENT','UNKNOWN')</update>
+  <update id="delivered">UPDATE verification_challenge SET state=#{state} WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler} AND state='SENDING'</update>
+  <update id="expireStale">UPDATE verification_challenge SET state=CASE WHEN expires_at &lt;= #{now} THEN 'EXPIRED' ELSE 'UNKNOWN' END WHERE state='SENDING' AND created_at &lt;= DATE_SUB(#{now},INTERVAL 30 SECOND)</update>
+  <delete id="cleanup">DELETE FROM verification_challenge WHERE expires_at &lt; #{before} AND NOT EXISTS (SELECT 1 FROM password_reset_credential r WHERE r.challenge_id=verification_challenge.id) LIMIT 200</delete>
+</mapper>

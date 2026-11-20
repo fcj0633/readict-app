@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.readict.identity.infrastructure.persistence.mapper.RateBucketMapper">
+ <insert id="lockTarget">INSERT INTO rate_bucket(scope,key_hmac,window_start,counter,reserved_chars,expires_at) VALUES('send-serial',#{key},'1970-01-01 00:00:00.000',0,0,#{expiry}) ON DUPLICATE KEY UPDATE expires_at=#{expiry}</insert>
+ <insert id="increment">INSERT INTO rate_bucket(scope,key_hmac,window_start,counter,reserved_chars,expires_at) VALUES(#{scope},#{key},#{window},1,0,#{expiry}) ON DUPLICATE KEY UPDATE counter=counter+1</insert>
+ <select id="count" resultType="int">SELECT counter FROM rate_bucket WHERE scope=#{scope} AND key_hmac=#{key} AND window_start=#{window} FOR UPDATE</select>
+ <update id="release">UPDATE rate_bucket SET counter=GREATEST(0,counter-1) WHERE scope=#{scope} AND key_hmac=#{key} AND window_start=#{window}</update>
+ <delete id="cleanup">DELETE FROM rate_bucket WHERE expires_at &lt; #{now} LIMIT 200</delete>
+</mapper>

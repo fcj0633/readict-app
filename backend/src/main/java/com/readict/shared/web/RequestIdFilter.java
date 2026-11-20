@@ -27,7 +27,9 @@ public class RequestIdFilter extends OncePerRequestFilter {
         try { chain.doFilter(request, response); }
         finally {
             String route = switch (request.getRequestURI()) {
-                case "/api/v1/system/status", "/actuator/health/liveness", "/actuator/health/readiness" -> request.getRequestURI();
+                case "/api/v1/system/status", "/actuator/health/liveness", "/actuator/health/readiness",
+                    "/api/v1/auth/csrf", "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/me", "/api/v1/auth/logout", "/api/v1/auth/password",
+                    "/api/v1/auth/verification/challenges", "/api/v1/auth/verification/verify", "/api/v1/auth/password-reset/challenges", "/api/v1/auth/password-reset/verify", "/api/v1/auth/password-reset/complete", "/api/v1/me/settings" -> request.getRequestURI();
                 default -> "other";
             };
             String method = java.util.Set.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS").contains(request.getMethod()) ? request.getMethod() : "OTHER";
