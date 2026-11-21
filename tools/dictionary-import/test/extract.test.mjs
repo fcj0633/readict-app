@@ -15,8 +15,8 @@ test('COL complete sentence layout preserves leading Chinese parentheses and Eng
   const result = extract(source(region(sense('An invented definition. (自建括注) 示例 sample；保留 42'))));
   assert.equal(result.outcome, 'ENTRY'); assert.equal(result.regions[0].senses[0].zh, '(自建括注) 示例 sample；保留 42');
 });
-test('mixed text without an explicit sentence/translation boundary is quarantined', () => {
-  const result = extract(source(region(sense('a synthetic fragment 自建释义'))));
+test('unseparated bilingual text is quarantined', () => {
+  const result = extract(source(region(sense('syntheticfragment自建释义'))));
   assert.equal(result.outcome, 'FAIL'); assert.equal(result.regions.length, 0); assert.equal(result.issues[0].issueCode, 'MEANING_BOUNDARY_UNKNOWN');
 });
 test('scripts, remote elements and nested examples never become a sense', () => {

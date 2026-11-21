@@ -78,4 +78,4 @@ npm run dev
 
 ## M02 词典工具当前进度
 
-长期离线工具位于 [tools/dictionary-import](tools/dictionary-import/README.md)。已验证 js-mdict 6.0.6 对实际 COL 的全源枚举，并提供保守结构提取诊断与正式自建夹具测试。当前真实提取质量未通过，M02 仍为部分实施；尚无正式 convert／validate 包、V5、Java 导入工具或 DictionaryProvider。源文件和诊断全文不提交，无需数据库配置即可运行 Node 工具。结果及阻断见 [M02 记录](../readict-design/validation/implementation/m02/README.md)。
+长期离线工具位于 [tools/dictionary-import](tools/dictionary-import/README.md)。已验证 js-mdict 6.0.6 对实际 COL 的全源枚举，并提供r3结构提取诊断、子词条身份、标签和引用检查；57项正式自建夹具测试通过，两次全源诊断一致。当前真实提取质量未通过，M02 仍为部分实施；尚无正式 convert／validate 包、V5、Java 导入工具或 DictionaryProvider。源文件和诊断全文不提交，无需数据库配置即可运行 Node 工具。结果及阻断见 [M02 记录](../readict-design/validation/implementation/m02/README.md)。
