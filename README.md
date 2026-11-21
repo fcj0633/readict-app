@@ -75,3 +75,7 @@ npm run dev
 前端在 frontend/ 依次执行 `npm ci`、`npm run lint`、`npm test`、`npm run build`。详细结果和异常启动场景的历史验证见设计仓库的 M00 验收记录，本仓库不保留单次验收脚本。
 
 迁移只由 Flyway 执行，禁 clean、自动 DDL 和 Mock 数据库回退；已执行 V1 不修改，后续新增 V2 等迁移。正式 jar 仅含 dev 配置，test 配置只在测试 classpath。生产部署不在当前范围。
+
+## M02 词典工具当前进度
+
+长期离线工具位于 [tools/dictionary-import](tools/dictionary-import/README.md)。已验证 js-mdict 6.0.6 对实际 COL 的全源枚举，并提供保守结构提取诊断与正式自建夹具测试。当前真实提取质量未通过，M02 仍为部分实施；尚无正式 convert／validate 包、V5、Java 导入工具或 DictionaryProvider。源文件和诊断全文不提交，无需数据库配置即可运行 Node 工具。结果及阻断见 [M02 记录](../readict-design/validation/implementation/m02/README.md)。
