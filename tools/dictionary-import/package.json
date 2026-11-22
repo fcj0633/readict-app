@@ -7,11 +7,14 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test test/*.test.mjs test/audio/*.test.mjs",
     "convert": "node --max-old-space-size=512 src/cli.mjs convert",
     "validate": "node src/cli.mjs validate",
     "inspect": "node src/cli.mjs inspect",
-    "diagnose": "node src/cli.mjs diagnose"
+    "diagnose": "node src/cli.mjs diagnose",
+    "audio:inspect": "node --max-old-space-size=512 src/audio/cli.mjs inspect",
+    "audio:convert": "node --max-old-space-size=512 src/audio/cli.mjs convert",
+    "audio:validate": "node --max-old-space-size=512 src/audio/cli.mjs validate"
   },
   "dependencies": {
     "js-mdict": "6.0.6",

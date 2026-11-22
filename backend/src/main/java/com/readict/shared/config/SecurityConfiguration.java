@@ -39,6 +39,8 @@ public class SecurityConfiguration {
                 .requestMatchers(HttpMethod.GET,"/api/v1/system/status","/actuator/health/liveness","/actuator/health/readiness","/api/v1/auth/csrf").permitAll()
                 .requestMatchers(HttpMethod.POST,"/api/v1/auth/register","/api/v1/auth/login","/api/v1/auth/password-reset/challenges","/api/v1/auth/password-reset/verify","/api/v1/auth/password-reset/complete").permitAll()
                 .requestMatchers(HttpMethod.GET,"/api/v1/auth/me","/api/v1/me/settings").authenticated()
+                .requestMatchers(HttpMethod.GET,"/api/v1/dictionary/audio/*").authenticated()
+                .requestMatchers(HttpMethod.HEAD,"/api/v1/dictionary/audio/*").authenticated()
                 .requestMatchers(HttpMethod.PUT,"/api/v1/auth/password","/api/v1/me/settings").authenticated()
                 .requestMatchers(HttpMethod.POST,"/api/v1/auth/verification/challenges","/api/v1/auth/verification/verify").authenticated()
                 .anyRequest().denyAll())

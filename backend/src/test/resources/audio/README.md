@@ -1,0 +1,1 @@
+Synthetic bundle contains self-authored transport bytes, not a playable recording or dictionary source. It tests identity, safety, persistence and byte serving. Actual codec and browser evidence must use the separately audited local recordings.

@@ -18,3 +18,18 @@ LOCAL_MVP 使用当前 COL 可安全提取的子集，保留全源处置和错�
 身份采用 entry-v2／sense-v1、规范化 col-normalize-v1。主组件为0，子组件独立，不继承主词 IPA 或 lemma；保留标签、说明、引用和 UTF-16 源位置。UTF-8 无BOM、LF；单源2MiB、单行512KiB、Node RSS目标1GiB、完整包1GiB。脚本、远程资源和例句子树不执行／不进入释义。
 
 原始词典、产物与秘密仅留本机忽略目录。软件许可和词典数据权利分别记录；当前 UNVERIFIED，快照及分发 false。Java 导入与查询运行方式见应用根 README；详细设计和验收见平级设计仓库 M02 记录。
+
+## 独立发音库
+
+音频与 COL 文字包独立。使用同一工具、`sound-map-v3` 和 `readict-audio-converter-4`，不在线补录或猜测原型。配置 JSON 仅存本机，字段为 `mdx`、`mdd`、`icons`、`ffmpeg`、`ffprobe` 的绝对路径；分别指向 Sound.mdx、Sound_us_uk.mdd、sound.mdd 和便携工具。不得提交源文件、工具二进制、私有音频或配置。
+
+```powershell
+npm run audio:inspect -- --config <本机配置JSON> --out <全新检查目录>
+npm run audio:convert -- --config <本机配置JSON> --inspection <检查目录> --out <全新音频包目录> --allow-local-subset
+# 中断后保留同一输入、配置、检查目录和输出参数，并显式增加 --resume。
+npm run audio:validate -- --bundle <完成的音频包目录> --allow-local-subset
+```
+
+`--allow-local-subset` 采用用户允许的本机可用录音子集。只允许有明确摘要与位置的源格式、PCM、信号或转码质量缺陷隔离；进程失败、超时、路径、完整性和计数错误仍阻断。不放宽每条录音门槛，映射不返回隔离资源。默认校验完整范围，LOCAL_MVP 包必须显式允许。技术可用、完整音源、人工试听和数据权利分别记录；本机技术可用不代表发布授权。
+
+包为 `readict-audio-bundle-1`，包含 manifest、assets、mappings、issues、quality、dispositions 与摘要寻址 media。临时 `.partial` 永远不可导入；成功后 checkpoint 保留在包外用于核查。两路有界 FFmpeg 进程，各次调用显式独立映射输入与输出，不拼接录音；每次调用30秒超时，失败回到单资源诊断。每条源和目标均解码检查信号、时长及格式。统一 `npm test` 同时执行文字与音频测试；合成媒体字节夹具只验证传输与身份，不作为实际播放或人工试听证据。

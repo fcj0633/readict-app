@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.readict.lexical.infrastructure.persistence.mapper.AudioMapper">
+  <sql id="datasetColumns">id,version,status,manifest_json AS manifest,lease_owner,lease_until,imported_assets,imported_mappings,expected_assets,expected_mappings,error_code</sql>
+  <select id="active" resultType="map">SELECT a.dataset_id,a.version,d.status,d.manifest_json AS manifest FROM dictionary_audio_active a LEFT JOIN dictionary_audio_dataset d ON d.id=a.dataset_id WHERE a.slot=1</select>
+  <select id="lockActive" resultType="map">SELECT dataset_id,version FROM dictionary_audio_active WHERE slot=1 FOR UPDATE</select>
+  <select id="dataset" resultType="map">SELECT <include refid="datasetColumns"/> FROM dictionary_audio_dataset WHERE id=#{id}</select>
+  <select id="lockDataset" resultType="map">SELECT <include refid="datasetColumns"/> FROM dictionary_audio_dataset WHERE id=#{id} FOR UPDATE</select>
+  <insert id="create">INSERT INTO dictionary_audio_dataset(id,version,identity_sha,status,manifest_sha,manifest_json,expected_assets,expected_mappings,lease_owner,lease_until) VALUES(#{id},#{version},#{identity},'IMPORTING',#{manifestSha},#{manifest},#{assets},#{mappings},#{owner},TIMESTAMPADD(SECOND,120,UTC_TIMESTAMP(6)))</insert>
+  <update id="acquire">UPDATE dictionary_audio_dataset SET lease_owner=#{owner},lease_until=TIMESTAMPADD(SECOND,120,UTC_TIMESTAMP(6)),updated_at=UTC_TIMESTAMP(6) WHERE id=#{id} AND status='IMPORTING' AND (lease_until IS NULL OR lease_until&lt;=UTC_TIMESTAMP(6))</update>
+  <update id="heartbeat">UPDATE dictionary_audio_dataset SET lease_until=TIMESTAMPADD(SECOND,120,UTC_TIMESTAMP(6)),updated_at=UTC_TIMESTAMP(6) WHERE id=#{id} AND status='IMPORTING' AND lease_owner=#{owner} AND lease_until&gt;UTC_TIMESTAMP(6)</update>
+  <update id="relinquish">UPDATE dictionary_audio_dataset SET lease_owner=NULL,lease_until=NULL WHERE id=#{id} AND status='IMPORTING' AND lease_owner=#{owner}</update>
+  <update id="checkpoint">UPDATE dictionary_audio_dataset SET imported_assets=#{assets},imported_mappings=#{mappings},last_asset_ordinal=#{assets},last_mapping_ordinal=#{mappings},updated_at=UTC_TIMESTAMP(6) WHERE id=#{id} AND lease_owner=#{owner} AND lease_until&gt;UTC_TIMESTAMP(6) AND status='IMPORTING'</update>
+  <update id="ready">UPDATE dictionary_audio_dataset SET status='READY',lease_owner=NULL,lease_until=NULL,updated_at=UTC_TIMESTAMP(6) WHERE id=#{id} AND lease_owner=#{owner} AND lease_until&gt;UTC_TIMESTAMP(6) AND status='IMPORTING'</update>
+  <update id="failed">UPDATE dictionary_audio_dataset SET status='FAILED',error_code='AUDIO_DATABASE_VERIFY_FAILED',lease_owner=NULL,lease_until=NULL,updated_at=UTC_TIMESTAMP(6) WHERE id=#{id} AND lease_owner=#{owner} AND status='IMPORTING'</update>
+  <insert id="assets">INSERT INTO dictionary_audio_asset(id,dataset_id,source_ordinal,source_key,source_sha,output_sha,storage_key,bytes,duration_ms,sample_rate,channels,mime) VALUES <foreach collection="rows" item="r" separator=",">(#{r.id},#{dataset},#{r.ordinal},#{r.source},#{r.sourceSha},#{r.outputSha},#{r.storage},#{r.bytes},#{r.duration},22050,1,'audio/mpeg')</foreach></insert>
+  <insert id="mappings">INSERT INTO dictionary_audio_mapping(dataset_id,source_ordinal,link_order,index_key,display_headword,word_key,accent,audio_id,evidence_json) VALUES <foreach collection="rows" item="r" separator=",">(#{dataset},#{r.ordinal},#{r.link},#{r.index},#{r.display},#{r.word},#{r.accent},#{r.audio},#{r.evidence})</foreach></insert>
+  <select id="countAssets" resultType="long">SELECT COUNT(*) FROM dictionary_audio_asset WHERE dataset_id=#{id}</select>
+  <select id="countMappings" resultType="long">SELECT COUNT(*) FROM dictionary_audio_mapping WHERE dataset_id=#{id}</select>
+  <select id="assetPage" resultType="map">SELECT source_ordinal,storage_key,bytes,output_sha FROM dictionary_audio_asset WHERE dataset_id=#{dataset} AND source_ordinal&gt;#{after} ORDER BY source_ordinal LIMIT 500</select>
+  <select id="find" resultType="map">SELECT a.id,a.output_sha,a.duration_ms,m.accent FROM dictionary_audio_mapping m JOIN dictionary_audio_asset a ON a.dataset_id=m.dataset_id AND a.id=m.audio_id WHERE m.dataset_id=#{dataset} AND m.word_key=#{word} ORDER BY m.accent,m.source_ordinal,m.link_order</select>
+  <select id="resource" resultType="map">SELECT a.id,a.dataset_id,a.storage_key,a.bytes,a.output_sha,a.duration_ms,d.status FROM dictionary_audio_asset a JOIN dictionary_audio_dataset d ON d.id=a.dataset_id WHERE a.id=#{id} AND d.status='READY'</select>
+  <update id="activate">UPDATE dictionary_audio_active SET dataset_id=#{dataset},version=version+1,updated_at=UTC_TIMESTAMP(6) WHERE slot=1 AND version=#{version}</update>
+</mapper>

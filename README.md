@@ -74,7 +74,7 @@ npm run dev
 
 前端在 frontend/ 依次执行 `npm ci`、`npm run lint`、`npm test`、`npm run build`。详细结果和异常启动场景的历史验证见设计仓库的 M00 验收记录，本仓库不保留单次验收脚本。
 
-迁移只由 Flyway 执行，禁 clean、自动 DDL 和 Mock 数据库回退；已执行 V1～V4 不修改，本次增量新增 V5。JAR 包含 dev／test 的隔离连接模板，凭据由环境提供，必须显式选择单一配置；测试仍仅允许 readict_test。生产部署不在当前范围。
+迁移只由 Flyway 执行，禁 clean、自动 DDL 和 Mock 数据库回退；已执行 V1～V5 不修改，音频增量使用 V6。JAR 包含 dev／test 的隔离连接模板，凭据由环境提供，必须显式选择单一配置；测试仍仅允许 readict_test。生产部署不在当前范围。
 
 ## M02 本机词典底座
 
@@ -100,3 +100,22 @@ java -jar $readictTool activate --dataset $readictDataset --expected-active-vers
 逐条确认退出码0再继续。退出码：0成功、2输入／schema错误、3质量／使用范围未允许、4数据库／租约／冲突失败、5内部异常。导入 READY 不自动激活，切换和回退均比较活动版本。相同目标、相同预期版本的重复激活不升版。采样包、诊断包、partial目录始终不可导入；--allow-local-mvp 不能绕过其他校验。
 
 普通测试使用自建夹具，不依赖真实词典；MySQL IT 使用 readict_test，覆盖回滚、续跑、租约、切换及缓存。真实 COL 只用于本机单独验收，不能把自建夹具通过当作真实词典质量证明。
+
+## A02 本机音频底座
+
+离线音频处理命令见工具说明。Web 使用私有存储环境变量 `READICT_AUDIO_STORAGE_ROOT`，test/dev 根目录名分别必须为 `readict_test`／`readict_dev`，不得放在静态资源目录。未配置时返回明确不可用，正常启动不执行导入或转码。
+
+```powershell
+# backend/ 中执行；数据库命令先加载对应单一环境凭据及私有存储根。
+java -jar $readictTool audio-validate --bundle <音频包> --allow-local-subset
+java -jar $readictTool audio-import --bundle <音频包> --allow-local-subset --spring.profiles.active=dev
+# 中断导入显式增加 --resume；READY 不自动激活。
+java -jar $readictTool audio-inspect --dataset <音频数据集UUID> --spring.profiles.active=dev
+java -jar $readictTool audio-activate --dataset <音频数据集UUID> --expected-active-version <刚读取的实际版本> --allow-local-subset --spring.profiles.active=dev
+```
+
+`audio-validate` 不启动 Spring 或数据库。其余音频子命令不加载 MVC、Session 或账号后台任务，不需要认证 HMAC。默认完整范围校验；`--allow-local-subset` 仅允许有明细的本机缺陷隔离策略。退出码沿用词典工具：0成功、2输入、3质量／策略、4数据库／租约／版本冲突、5内部错误。失败保留旧活动版本，回退使用同样的版本条件切换，不自动删除旧 READY 媒体。
+
+`AudioCatalog.find` 是独立内部接口，按实际展示词头返回录音、口音及音频版本，不改变 COL 音标或文字查询结果。鉴权播放为 `GET/HEAD /api/v1/dictionary/audio/{audioId}`，支持单段 Range、ETag 和 If-Range；认证检查先于条件请求。未登录401、非法标识400、不可访问资源404、未配置或读取故障503。音频目录和导入不提供 HTTP 入口。正式卡片播放待 M05；机器解码和浏览器媒体事件不替代人工试听。数据权利仍 UNVERIFIED，不允许快照或分发。
+
+本轮按 MVP 使用：导入冻结清单，媒体逐文件核验后直接发布至私有目录，READY 复用发布结果并核对数据库计数；启用复用 READY 校验结果并检查计数及活动版本，播放时校验实际摘要。完整复验、存储巡检和断电恢复后置，未声称全面验收；独立 `audio-validate` 仍可按需执行完整媒体校验。

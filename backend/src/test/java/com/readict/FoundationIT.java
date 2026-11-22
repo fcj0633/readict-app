@@ -66,7 +66,7 @@ class FoundationIT {
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         assertThat(jdbc().queryForList("SELECT installed_rank,version,checksum,success FROM flyway_schema_history ORDER BY installed_rank")).isEqualTo(before);
         assertThat(jdbc().queryForObject("SELECT COUNT(*) FROM system_metadata WHERE metadata_key='application'",Integer.class)).isEqualTo(1);
-        assertThat(jdbc().queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE()",String.class)).extracting(String::toLowerCase).containsExactlyInAnyOrder("system_metadata","flyway_schema_history","app_user","user_settings","spring_session","spring_session_attributes","verification_challenge","password_reset_credential","rate_bucket","dictionary_dataset","dictionary_active","dictionary_entry","dictionary_sense","dictionary_form_mapping");
+        assertThat(jdbc().queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE()",String.class)).extracting(String::toLowerCase).containsExactlyInAnyOrder("system_metadata","flyway_schema_history","app_user","user_settings","spring_session","spring_session_attributes","verification_challenge","password_reset_credential","rate_bucket","dictionary_dataset","dictionary_active","dictionary_entry","dictionary_sense","dictionary_form_mapping","dictionary_audio_dataset","dictionary_audio_asset","dictionary_audio_mapping","dictionary_audio_active");
     }
     @Test void baseMapperCrudAndXmlAgreeAtMillisecondPrecision() {
         var entity = new SystemMetadataEntity(); String key = key(); Instant time = Instant.parse("2026-11-19T03:04:05.123Z");

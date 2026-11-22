@@ -18,6 +18,7 @@ public final class DictionaryTool {
     }
     public static void main(String[] args) {int code=run(args);if(code!=0)System.exit(code);}
     static int run(String[] args) {
+        if(args.length>0&&args[0].startsWith("audio-"))return AudioTool.run(args);
         try {
             check(args.length>0,"USAGE_INVALID");String command=args[0];check(Set.of("validate","import","inspect","activate").contains(command),"USAGE_INVALID");Map<String,String> options=new HashMap<>();
             for(int i=1;i<args.length;i++){String a=args[i];if(a.startsWith("--spring.profiles.active=")){check(options.put("profile",a.substring(a.indexOf('=')+1))==null,"USAGE_INVALID");continue;}check(Set.of("--bundle","--dataset","--expected-active-version","--allow-local-mvp","--resume").contains(a)&&!options.containsKey(a),"USAGE_INVALID");if(Set.of("--allow-local-mvp","--resume").contains(a))options.put(a,"true");else{check(i+1<args.length&&!args[i+1].startsWith("--"),"USAGE_INVALID");options.put(a,args[++i]);}}
