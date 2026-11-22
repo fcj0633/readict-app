@@ -109,3 +109,10 @@ test('unresolved English-led localized units stay isolated instead of losing the
   const r=extract(src(wrap(major(`<p>${pos}${body}</p>`))));assert.equal(r.outcome,'FAIL');assert.equal(r.regions.length,0);assert.ok(r.issues.some(i=>i.issueCode==='MEANING_BOUNDARY_UNKNOWN'));
  }
 });
+
+test('grammatical explanation is not an inflection assertion about this entry',()=>{
+ for(const body of ['Use this with the past tense of the verb. 语法解释','The plural of a noun is used for several objects. 复数形式','Sample is used to form the superlative of compound adjectives. 构词说明','Sample is the past participle of some meanings of . 残缺说明']) {
+  const result=extract(src(wrap(major(`<p>${pos}${body}</p>`))));assert.equal(result.notes.some(n=>n.kind==='EXPLICIT_INFLECTION'),false);
+ }
+ const result=extract(src(wrap(major(`<p>${pos}Sample is the past participle of target in American English. 词形说明</p>`))));assert.equal(result.notes.find(n=>n.kind==='EXPLICIT_INFLECTION').target,'target');
+});

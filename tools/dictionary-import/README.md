@@ -1,40 +1,20 @@
-# Readict COL 离线工具
+# COL 离线转换工具
 
-当前状态：M02-01读取兼容性通过；提取规则已升级`col-extract-r3`，技术质量仍阻断。支持子词条、标签和引用诊断；不是可导入的数据包生成器。convert、validate、Java导入／查询仍未实现。详细结果见[设计仓库M02记录](../../../readict-design/validation/implementation/m02/README.md)。
-
-## 环境与运行
-
-Node 24，ESM，锁定js-mdict 6.0.6、parse5 8.0.0；不读取数据库凭据，无浏览器或常驻服务。
+Node 24，ESM，js-mdict 6.0.6、parse5 8.0.0。当前规则 col-extract-r4，转换器 readict-col-converter-4。正式convert入口固定V8堆上限512MiB；直接运行CLI时同样使用 `node --max-old-space-size=512 src/cli.mjs convert ...`，RSS总预算仍为1GiB。运行前在本目录执行 `npm ci`；正式自建夹具测试入口为 `npm test`。
 
 ```powershell
-npm ci --ignore-scripts
-npm test
-npm run inspect -- --mdx '<本机col.mdx>' --mdd '<本机col.mdd>'
-npm run diagnose -- --mdx '<本机col.mdx>' --out '../../.artifacts/dictionary/extraction-r3-new'
+npm run inspect -- --mdx <源MDX> --mdd <源MDD>
+npm run diagnose -- --mdx <源MDX> --out <新诊断目录>
+npm run convert -- --mdx <源MDX> --mdd <源MDD> --out <新数据包目录> --dataset-version col-local-mvp-1
+npm run validate -- --bundle <数据包目录> --allow-local-mvp
 ```
 
-输出父目录须已存在，最终目录必须不存在，拒绝覆盖。inspect完成退出0；diagnose始终退出3（诊断未获正式发布资格）；输入／读取／文件错误退出2。输出只有诊断，不生成manifest，不操作数据库。
+尖括号是路径占位，需要替换。输出目录不得存在；失败的 `.partial` 目录不能导入，不能直接改名伪装完成。完整转换同时在包外保留同名 `.diagnostic` 目录，不提交全文或诊断内容。诊断退出3；输入／文件错误退出2；成功校验退出0。
 
-## 诊断契约与质量边界
+LOCAL_MVP 使用当前 COL 可安全提取的子集，保留全源处置和错误清单；不补词、不补写原文。必要区域错误仍整源隔离。see also／compare 非根附加目标失效只记警告，不连带删除独立释义；跳转／必要关系维持严格检查。完整 source pattern 列表和明确说明可以生成带证据的映射，不根据索引差异、删词尾或相邻词猜原型。
 
-schema为`readict-col-extraction-diagnostic-2`，固定`diagnosticOnly=true`、`releaseEligible=false`、审批0。JSONL文件为UTF-8无BOM、LF；单行上限512KiB，单源2MiB，RSS上限1GiB。原始全文和产物仅留忽略目录，不提交。失败保留.partial，完整结束后删除；run.json单独记录耗时和RSS。
+正式包为 readict-col-bundle-2，诊断仍为 readict-col-extraction-diagnostic-2。诊断固定 diagnosticOnly=true、releaseEligible=false，永远不可导入。LOCAL_MVP 正式包 diagnosticOnly=false，但完整质量 releaseEligible 仍为 false；显式 --allow-local-mvp 只允许采用该范围，不绕过摘要、身份、计数、引用、安全及预算检查。localMvpEligible 表示机器校验范围；源文对照抽查结果另归设计仓库，不等于全词典准确率。
 
-先保留惰性AST、原始href、文本顺序和位置，再剔除脚本／资源／例句生成安全文字。位置是原HTML的UTF-16字符偏移；释义边界的局部偏移另标解码压缩body基准。Node不会执行脚本或访问链接。不能把无句号处理简化为首汉字截断；不明确的词法边界仍FAIL。
+身份采用 entry-v2／sense-v1、规范化 col-normalize-v1。主组件为0，子组件独立，不继承主词 IPA 或 lemma；保留标签、说明、引用和 UTF-16 源位置。UTF-8 无BOM、LF；单源2MiB、单行512KiB、Node RSS目标1GiB、完整包1GiB。脚本、远程资源和例句子树不执行／不进入释义。
 
-extract的regions兼容属性现在表示词条组件列表：每项有sectionOrder、componentOrder和独立entryKey。主组件0；显式子词条结构组依出现顺序编号，同major延续段同组，跨major不因同名合并。子词条不继承主词IPA或lemma；parentEntryKey仅表示来源归属。用法标签另存；仅派生说明写DERIVATION_NOTE，不生成虚构sense。未来包契约为readict-col-bundle-2，entry-v2身份加入componentOrder；本轮仅实现身份向量，不输出正式包。
-
-源词头分类独立于未改动的col-normalize-v1；词缀／符号明确不支持，不剥掉标点冒充普通词。一个必要区域错误使整源FAIL，regions清空，quarantinedRegions只供隔离诊断。
-
-- dispositions.jsonl：每源唯一处置、摘要、计数及问题码。
-- candidates.jsonl：无源错误且依赖检查通过的候选组件；仍非发布数据。
-- quarantine.jsonl：失败源的局部结果、结构证据及说明，不可混入候选。
-- references.jsonl：原始目标、证据、冲突和图检查结果；区分存在、隔离、短语范围、循环、悬空及超跳。
-- issues.jsonl、representative-review.jsonl、quality-report.json：问题、固定50词的可见与可用覆盖、质量摘要。present包含隔离子词条，usableExactHeadwords另列；不能把存在当成可用。
-
-计数中sourceSucceeded包含ENTRY和ALIAS，sourceAliased另列；sourceTotal=sourceSucceeded+sourceSkipped+sourceFailed。图保留重复key及一对多，根跳转总计最多八跳。分支预算1024显式失败，目标不可用会传播隔离，不把失败依赖说成已就绪。
-
-## 测试与限制
-
-统一npm test执行test/*.test.mjs。夹具均为自建HTML／MDX，不提交COL原文。覆盖真实6.0.6重复key／跨块读取、结构分段、子词条、标签、身份向量、引用图、隔离及CLI。未知英文词形／括注紧接中文仍可能被隔离；某些源缺目标只能报边界错误，精确归因待补。测试通过不代表全源技术质量通过。
-
-工具许可与数据权利分别登记。COL权利仍UNVERIFIED，快照和分发未获授权；本轮没有批准任何源修正／排除。
+原始词典、产物与秘密仅留本机忽略目录。软件许可和词典数据权利分别记录；当前 UNVERIFIED，快照及分发 false。Java 导入与查询运行方式见应用根 README；详细设计和验收见平级设计仓库 M02 记录。

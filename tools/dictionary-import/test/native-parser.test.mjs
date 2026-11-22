@@ -56,13 +56,13 @@ test('CLI graph quarantines cycles/dangling and preserves eight-hop redirect lim
   } finally {await rm(dir,{recursive:true});}
 });
 
-test('CLI propagates quarantine through readable targets instead of false availability', async () => {
+test('CLI optional see-also preserves independent meaning and redirect availability', async () => {
  const dir=await mkdtemp(join(tmpdir(),'readict-dependencies-'));
  try {
   const path=join(dir,'fixture.mdx'),out=join(dir,'out');
   const html=(word,body)=>`<div class="wt-container"><h4><span class="title">${word}</span></h4><div class="collinsMajorTrans"><p>${body}</p></div></div>`;
   await writeFile(path,makeMdx([{key:'broken',text:html('broken','English only')},{key:'middle',text:html('middle','自建释义 → see also <a href="entry://broken">broken</a>')},{key:'outer',text:'@@@LINK=middle'}]));
   const run=spawnSync(process.execPath,[cli,'diagnose','--mdx',path,'--out',out],{encoding:'utf8'});assert.equal(run.status,3,run.stderr);
-  const rows=(await readFile(join(out,'dispositions.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);assert.ok(rows.every(r=>r.outcome==='FAIL'));assert.ok(rows[2].issueCodes.includes('REFERENCE_TARGET_QUARANTINED'));
+  const rows=(await readFile(join(out,'dispositions.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);assert.deepEqual(rows.map(r=>r.outcome),['FAIL','ENTRY','ALIAS']);assert.ok(rows[1].issueCodes.includes('REFERENCE_TARGET_QUARANTINED'));
  } finally {await rm(dir,{recursive:true});}
 });

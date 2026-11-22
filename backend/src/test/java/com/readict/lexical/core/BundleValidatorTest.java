@@ -1,0 +1,25 @@
+package com.readict.lexical.core;
+
+import static com.readict.lexical.core.DictionaryJson.*;
+import static org.assertj.core.api.Assertions.*;
+import java.nio.file.*;
+import java.util.*;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.io.TempDir;
+import tools.jackson.databind.node.ObjectNode;
+
+class BundleValidatorTest {
+ @TempDir Path temp;
+ @Test void selfAuthoredNodeBundleValidatesWithoutSpringOrDatabase(){var v=new BundleValidator().validate(Path.of("src/test/resources/lexical/synthetic-mvp"),true);assertThat(v.manifest().path("counts").path("entryCount").asInt()).isEqualTo(1);}
+ @Test void optInIsMandatory(){assertThatThrownBy(()->new BundleValidator().validate(Path.of("src/test/resources/lexical/synthetic-mvp"),false)).hasMessage("LOCAL_MVP_OPT_IN_REQUIRED");}
+ @Test void sharedIdentityVectorAndNormalization(){assertThat(identity(List.of("entry-v2","00000000-0000-8000-8000-000000000001",7,0,0,"sample")).toString()).isEqualTo("3512e547-8803-80ea-bb49-9d4874b45598");for(var pair:List.of(new String[]{"“Runs”","runs"},new String[]{"ＦＯＯ","foo"},new String[]{"École","école"},new String[]{"can’t","can't"},new String[]{"mother-in-law","mother-in-law"},new String[]{"é","é"}))assertThat(normalize(pair[0])).isEqualTo(pair[1]);for(String s:List.of("","123","two words","bad\0","\ud800","x".repeat(129)))assertThatThrownBy(()->normalize(s)).hasMessage("UNSUPPORTED_QUERY");}
+ @Test void frozenInputIsIndependentOfLaterOriginalChanges()throws Exception{Path p=BundleFixtures.create(temp.resolve("input"),2);try(var f=new BundleValidator().freeze(p,true)){Files.writeString(p.resolve("entries.jsonl"),"corrupted");assertThat(new BundleValidator().validate(f.bundle().root(),true).manifest()).isEqualTo(f.bundle().manifest());} }
+ @Test void duplicateKeysAndInvalidUtf8AndMissingLfAreRejected()throws Exception{Path p=temp.resolve("bad.jsonl");for(byte[]b:List.of("{\"a\":1,\"a\":2}\n".getBytes(),new byte[]{123,34,97,34,58,34,(byte)0xff,34,125,10},"{}".getBytes(),new byte[]{(byte)0xef,(byte)0xbb,(byte)0xbf,123,125,10})){Files.write(p,b);assertThatThrownBy(()->BundleValidator.rows(p,n->{})).isInstanceOf(DictionaryFailure.class);} }
+ @Test void contentTamperingAndUnknownFieldsAreRejected()throws Exception{Path p=BundleFixtures.create(temp.resolve("one"),1);Files.writeString(p.resolve("senses.jsonl"),"{}\n",StandardOpenOption.APPEND);assertThatThrownBy(()->new BundleValidator().validate(p,true)).hasMessage("FILE_HASH_MISMATCH");Path q=BundleFixtures.create(temp.resolve("two"),1);var m=(ObjectNode)parse(Files.readString(q.resolve("manifest.json")));m.put("unexpected",true);Files.writeString(q.resolve("manifest.json"),json(m)+"\n");assertThatThrownBy(()->new BundleValidator().validate(q,true)).hasMessage("UNKNOWN_FIELD");}
+ @Test void manifestPathTraversalAndWrongIdentityRejected()throws Exception{Path p=BundleFixtures.create(temp.resolve("path"),1);var m=(ObjectNode)parse(Files.readString(p.resolve("manifest.json")));((ObjectNode)m.path("files").get(0)).put("name","../entries.jsonl");Files.writeString(p.resolve("manifest.json"),json(m)+"\n");assertThatThrownBy(()->new BundleValidator().validate(p,true)).hasMessage("FILE_WHITELIST");}
+ @Test void fieldLimitsAndEmptyEntriesRejectedEvenWithCorrectHashes()throws Exception{Path p=BundleFixtures.create(temp.resolve("limit"),1);var s=(ObjectNode)parse(Files.readString(p.resolve("senses.jsonl")));s.put("zh","字".repeat(10001));Files.writeString(p.resolve("senses.jsonl"),json(s)+"\n");BundleFixtures.rehash(p);assertThatThrownBy(()->new BundleValidator().validate(p,true)).hasMessage("FIELD_TOO_LONG");Path q=BundleFixtures.create(temp.resolve("empty"),1);Files.writeString(q.resolve("senses.jsonl"),"");BundleFixtures.rehash(q);assertThatThrownBy(()->new BundleValidator().validate(q,true)).hasMessage("EMPTY_ENTRY");}
+ @Test void samplingDiagnosticAndPartialRejected()throws Exception{for(String kind:List.of("diagnosticOnly","schemaVersion")){Path p=BundleFixtures.create(temp.resolve(kind),1);var m=(ObjectNode)parse(Files.readString(p.resolve("manifest.json")));if(kind.equals("diagnosticOnly"))m.put(kind,true);else m.put(kind,"unknown");Files.writeString(p.resolve("manifest.json"),json(m)+"\n");assertThatThrownBy(()->new BundleValidator().validate(p,true)).hasMessage("SCHEMA_OR_DIAGNOSTIC_INVALID");}Path p=BundleFixtures.create(temp.resolve("unfinished.partial"),1);assertThatThrownBy(()->new BundleValidator().validate(p,true)).hasMessage("PARTIAL_BUNDLE");}
+ @Test void escapedUnpairedSurrogateCannotBeChangedByDatabaseEncoding(){String bad="\""+Character.toString((char)92)+"ud800\"";assertThatThrownBy(()->parse(bad)).hasMessage("UNPAIRED_SURROGATE");}
+ @Test void sourceOffsetsMustUseUtf16AndOrderedNonnegativeBounds()throws Exception{Path p=BundleFixtures.create(temp.resolve("range"),1);var e=(ObjectNode)parse(Files.readString(p.resolve("entries.jsonl")));e.putObject("sourceRange").put("unit","BYTE").put("startOffset",0).put("endOffset",1);Files.writeString(p.resolve("entries.jsonl"),json(e)+"\n");BundleFixtures.rehash(p);assertThatThrownBy(()->new BundleValidator().validate(p,true)).hasMessage("SOURCE_RANGE_INVALID");}
+
+}

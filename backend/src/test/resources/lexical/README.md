@@ -1,0 +1,1 @@
+这些JSON数据包完全由自建的3条最小MDX内容生成，只含“自建测试释义”、显式alias及None空记录，不是COL词典内容。固定包用于Node生成／Java独立校验的一致性回归；BundleFixtures在临时目录派生随机数据集，真实MySQL测试只精确清理自己创建的UUID。

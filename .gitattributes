@@ -1,0 +1,2 @@
+# Synthetic dictionary bundle hashes require identical bytes on every platform.
+backend/src/test/resources/lexical/synthetic-mvp/* text eol=lf

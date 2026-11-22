@@ -74,8 +74,29 @@ npm run dev
 
 前端在 frontend/ 依次执行 `npm ci`、`npm run lint`、`npm test`、`npm run build`。详细结果和异常启动场景的历史验证见设计仓库的 M00 验收记录，本仓库不保留单次验收脚本。
 
-迁移只由 Flyway 执行，禁 clean、自动 DDL 和 Mock 数据库回退；已执行 V1 不修改，后续新增 V2 等迁移。正式 jar 仅含 dev 配置，test 配置只在测试 classpath。生产部署不在当前范围。
+迁移只由 Flyway 执行，禁 clean、自动 DDL 和 Mock 数据库回退；已执行 V1～V4 不修改，本次增量新增 V5。JAR 包含 dev／test 的隔离连接模板，凭据由环境提供，必须显式选择单一配置；测试仍仅允许 readict_test。生产部署不在当前范围。
 
-## M02 词典工具当前进度
+## M02 本机词典底座
 
-长期离线工具位于 [tools/dictionary-import](tools/dictionary-import/README.md)。已验证 js-mdict 6.0.6 对实际 COL 的全源枚举，并提供r3结构提取诊断、子词条身份、标签和引用检查；57项正式自建夹具测试通过，两次全源诊断一致。当前真实提取质量未通过，M02 仍为部分实施；尚无正式 convert／validate 包、V5、Java 导入工具或 DictionaryProvider。源文件和诊断全文不提交，无需数据库配置即可运行 Node 工具。结果及阻断见 [M02 记录](../readict-design/validation/implementation/m02/README.md)。
+长期 Node 转换／校验工具见 [工具说明](tools/dictionary-import/README.md)。当前 COL 使用 LOCAL_MVP 有限覆盖范围，不补词；完整质量门槛仍未通过。数据权利 UNVERIFIED、快照／分发 false。详细结果见 [M02 记录](../readict-design/validation/implementation/m02/README.md)。全文包、源文件与秘密不提交。
+
+后端提供 DictionaryProvider 内部查询，无查词 HTTP 或页面。lookup 返回 FOUND／AMBIGUOUS／NOT_FOUND／UNSUPPORTED_QUERY；未配置与依赖故障另行报错。使用精确词头和有证据的词形映射，保留独立子词条、标签及版本；POS 提示只排序，不消除歧义。切换数据集后缓存按版本隔离。
+
+在 backend/ 执行 `mvn package`，同时生成 Web JAR 和 `readict-backend-0.0.1-SNAPSHOT-dictionary-tool.jar`。离线文件 validate 不启动 Spring 或连接数据库；其他命令按显式 dev／test 配置启动数据库／Flyway，不加载用户认证和 Session，不要求认证 HMAC。
+
+```powershell
+$readictTool = './target/readict-backend-0.0.1-SNAPSHOT-dictionary-tool.jar'
+$readictBundle = '<已校验的本机完整数据包路径>'
+java -jar $readictTool validate --bundle $readictBundle --allow-local-mvp
+# 数据库命令前加载目标环境的专用 DB_APP_*／DB_MIGRATION_* 凭据。
+java -jar $readictTool import --bundle $readictBundle --allow-local-mvp --spring.profiles.active=dev
+# 中断后对完全相同的包显式增加 --resume；不修改包后覆盖续跑。
+$readictDataset = (Get-Content (Join-Path $readictBundle 'manifest.json') -Raw | ConvertFrom-Json).datasetId
+java -jar $readictTool inspect --dataset $readictDataset --spring.profiles.active=dev
+# 从刚取得的 inspect 结果读取实际 activeVersion 后执行，禁止照抄过期版本。
+java -jar $readictTool activate --dataset $readictDataset --expected-active-version <实际版本> --allow-local-mvp --spring.profiles.active=dev
+```
+
+逐条确认退出码0再继续。退出码：0成功、2输入／schema错误、3质量／使用范围未允许、4数据库／租约／冲突失败、5内部异常。导入 READY 不自动激活，切换和回退均比较活动版本。相同目标、相同预期版本的重复激活不升版。采样包、诊断包、partial目录始终不可导入；--allow-local-mvp 不能绕过其他校验。
+
+普通测试使用自建夹具，不依赖真实词典；MySQL IT 使用 readict_test，覆盖回滚、续跑、租约、切换及缓存。真实 COL 只用于本机单独验收，不能把自建夹具通过当作真实词典质量证明。

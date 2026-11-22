@@ -8,6 +8,8 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
+    "convert": "node --max-old-space-size=512 src/cli.mjs convert",
+    "validate": "node src/cli.mjs validate",
     "inspect": "node src/cli.mjs inspect",
     "diagnose": "node src/cli.mjs diagnose"
   },

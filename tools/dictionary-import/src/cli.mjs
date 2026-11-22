@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
+import { convert, validate } from './bundle.mjs';
 import { diagnose } from './diagnose.mjs';
 import { fingerprint, ParserAdapter, parserVersion, sha256 } from './parser-adapter.mjs';
 
@@ -32,12 +33,13 @@ export async function inspect(values) {
 }
 export async function main(args = process.argv.slice(2)) {
 try {
-  const { values, positionals } = parseArgs({ args, options: { mdx: { type: 'string' }, mdd: { type: 'string' }, out: { type: 'string' } }, allowPositionals: true, strict: true });
-  if (positionals.length !== 1 || !['inspect', 'diagnose'].includes(positionals[0]) || !values.mdx || positionals[0] === 'diagnose' && (!values.out || values.mdd) || positionals[0] === 'inspect' && values.out) throw new Error('USAGE: inspect --mdx <file> [--mdd <file>] | diagnose --mdx <file> --out <new-directory>');
-  const result = positionals[0] === 'inspect' ? await inspect(values) : await diagnose(values);
+  const { values, positionals } = parseArgs({ args, options: { mdx: { type: 'string' }, mdd: { type: 'string' }, out: { type: 'string' }, bundle: { type: 'string' }, 'dataset-version': { type: 'string' }, 'allow-local-mvp': { type: 'boolean' } }, allowPositionals: true, strict: true });
+  const command=positionals[0];
+  if (positionals.length!==1 || !['inspect','diagnose','convert','validate'].includes(command) || (command==='validate' ? !values.bundle : !values.mdx) || (['diagnose','convert'].includes(command) && !values.out)) throw new Error('USAGE: inspect | diagnose | convert | validate');
+  const result = command==='inspect' ? await inspect(values) : command==='diagnose' ? await diagnose(values) : command==='convert' ? await convert(values) : await validate(values);
   console.log(JSON.stringify(result, null, 2));
   if (positionals[0] === 'diagnose') process.exitCode = 3;
-} catch (error) { console.error(JSON.stringify({ code: error.message.startsWith('USAGE:') ? 'INPUT_INVALID' : 'CONVERSION_FAILED', message: error.message })); process.exitCode = 2; }
+} catch (error) { const quality=/QUALITY|BUDGET|LOCAL_MVP_OPT_IN_REQUIRED/u.test(error.message); console.error(JSON.stringify({ code: quality ? 'QUALITY_REJECTED' : error.message.startsWith('USAGE:') ? 'INPUT_INVALID' : 'CONVERSION_FAILED', message: error.message })); process.exitCode = quality ? 3 : error.code?.startsWith('ERR_PARSE_ARGS') ? 2 : error instanceof TypeError ? 5 : 2; }
 
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

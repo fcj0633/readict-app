@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { ParserAdapter, fingerprint } from './parser-adapter.mjs';
 import { extract, rulesVersion } from './extract.mjs';
 import { literalKey, resolveReference } from './references.mjs';
+export const optionalReference = ref => ['SEE_ALSO', 'COMPARE'].includes(ref.kind) && !ref.root;
 export const representativeWords = "book books read reads reading run runs ran running child children saw see seen went go better good best feet foot mice mouse thought think left leave lie lay lying set light well fast hard record present lead wind bank spring close open beautiful quickly the an can't mother-in-law colour".split(' ');
 function jsonLine(value) {
   const line = JSON.stringify(value) + '\n';
@@ -23,7 +24,7 @@ export async function diagnose({ mdx, out }) {
       const result = extract(record);
       await stage.write(jsonLine({ sourceOrdinal: record.sourceOrdinal, indexKey: record.indexKey, sourceRecordHash: record.sourceRecordHash, result }));
       const redirects = result.outcome === 'ALIAS' ? result.references.filter(r => r.root).flatMap(r => r.targets.map(t => t.target)) : [];
-      const row = { sourceOrdinal: record.sourceOrdinal, available: result.outcome === 'ENTRY', redirects, dependencies: result.references.flatMap(r => r.targets.map(t => t.target)) };
+      const row = { sourceOrdinal: record.sourceOrdinal, available: result.outcome === 'ENTRY', redirects, dependencies: [...result.references.filter(r => !optionalReference(r)).flatMap(r => r.targets.map(t => t.target)), ...result.notes.filter(n=>n.kind==='EXPLICIT_INFLECTION').map(n=>n.target)] };
       const keys = new Set([literalKey(record.indexKey), ...result.evidence.filter(e => e.kind === 'HEADWORD').map(e => literalKey(e.value)), ...result.regions.map(e => literalKey(e.headword))]);
       for (const key of keys) { if (!index.has(key)) index.set(key, []); index.get(key).push(row); }
       watch();
@@ -48,16 +49,21 @@ export async function diagnose({ mdx, out }) {
     for await (const line of lines) {
       const row = JSON.parse(line); const result = row.result;
       for (const ref of result.references) {
+        if(ref.conflict && optionalReference(ref)) result.issues.push({sourceOrdinal:row.sourceOrdinal,indexKey:row.indexKey,region:ref.region,field:'relation',issueCode:'REFERENCE_DISPLAY_CONFLICT',severity:'WARNING',rulesVersion,sourceRecordHash:row.sourceRecordHash,sourceRange:ref.sourceRange,disposition:'PENDING_REVIEW'});
         ref.resolutions = ref.targets.map(t => ({ target: t.target, results: resolveReference(t.target, index, ref.root ? 7 : 8) }));
         for (const resolution of ref.resolutions) for (const r of resolution.results) {
           referenceStatuses[r.status] = (referenceStatuses[r.status] ?? 0) + 1;
           if (['CYCLE', 'DANGLING', 'HOP_LIMIT', 'BRANCH_BUDGET', 'TARGET_QUARANTINED'].includes(r.status)) {
             const code = 'REFERENCE_' + r.status;
-            if (!result.issues.some(i => i.issueCode === code && i.region === ref.region)) result.issues.push({ sourceOrdinal: row.sourceOrdinal, indexKey: row.indexKey, region: ref.region, field: 'relation', issueCode: code, severity: 'ERROR', rulesVersion, sourceRecordHash: row.sourceRecordHash, sourceRange: ref.sourceRange, disposition: 'PENDING_REVIEW' });
+            if (!result.issues.some(i => i.issueCode === code && i.region === ref.region)) result.issues.push({ sourceOrdinal: row.sourceOrdinal, indexKey: row.indexKey, region: ref.region, field: 'relation', issueCode: code, severity: optionalReference(ref) ? 'WARNING' : 'ERROR', rulesVersion, sourceRecordHash: row.sourceRecordHash, sourceRange: ref.sourceRange, disposition: 'PENDING_REVIEW' });
           }
         }
       }
-      if (result.issues.length && result.outcome !== 'FAIL') { result.quarantinedRegions = result.regions; result.regions = []; result.outcome = 'FAIL'; }
+      for(const note of result.notes.filter(n=>n.kind==='EXPLICIT_INFLECTION')) for(const r of resolveReference(note.target,index)) if(r.status!=='TARGET_PRESENT') {
+        const code='INFLECTION_'+r.status;
+        if(!result.issues.some(i=>i.issueCode===code&&i.region===note.region)) result.issues.push({sourceOrdinal:row.sourceOrdinal,indexKey:row.indexKey,region:note.region,field:'relation',issueCode:code,severity:'ERROR',rulesVersion,sourceRecordHash:row.sourceRecordHash,sourceRange:note.sourceRange,disposition:'PENDING_REVIEW'});
+      }
+      if (result.issues.some(i => i.severity === 'ERROR') && result.outcome !== 'FAIL') { result.quarantinedRegions = result.regions; result.regions = []; result.outcome = 'FAIL'; }
       counts.sourceTotal++;
       if (result.outcome === 'FAIL') counts.sourceFailed++;
       else if (result.outcome === 'SKIP') { counts.sourceSkipped++; skipReasons[result.reason] = (skipReasons[result.reason] ?? 0) + 1; }
@@ -69,7 +75,7 @@ export async function diagnose({ mdx, out }) {
       const disposition = { sourceOrdinal: row.sourceOrdinal, indexKey: row.indexKey, sourceRecordHash: row.sourceRecordHash, outcome: result.outcome, reason: result.reason ?? null, candidateEntryCount: result.regions.length, candidateSenseCount: result.regions.reduce((sum, r) => sum + r.senses.length, 0), issueCodes: [...new Set(result.issues.map(i => i.issueCode))] };
       await files.get('dispositions').write(jsonLine(disposition));
       for (const issue of result.issues) { errors[issue.issueCode] = (errors[issue.issueCode] ?? 0) + 1; await files.get('issues').write(jsonLine(issue)); }
-      for (const entry of result.regions) await files.get('candidates').write(jsonLine({ sourceOrdinal: row.sourceOrdinal, sourceRecordHash: row.sourceRecordHash, ...entry }));
+      for (const entry of result.regions) await files.get('candidates').write(jsonLine({ sourceOrdinal: row.sourceOrdinal, sourceRecordHash: row.sourceRecordHash, indexKey: row.indexKey, notes: result.notes.filter(n => n.region === entry.sectionOrder), references: result.references.filter(r => r.region === entry.sectionOrder && (r.componentOrder ?? 0) === entry.componentOrder), ...entry }));
       if (result.outcome === 'FAIL') await files.get('quarantine').write(jsonLine({ ...disposition, regions: result.quarantinedRegions, evidence: result.evidence, notes: result.notes }));
       for (const ref of result.references) await files.get('references').write(jsonLine({ sourceOrdinal: row.sourceOrdinal, ...ref }));
       const observedWords = [row.indexKey, ...result.regions.map(r => r.headword), ...result.quarantinedRegions.map(r => r.headword)];

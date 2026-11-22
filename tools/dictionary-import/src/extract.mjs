@@ -4,7 +4,7 @@ import { segment } from './segment.mjs';
 import { entryKey } from './identity.mjs';
 import { reference } from './references.mjs';
 export { nodes, text } from './evidence.mjs';
-export const rulesVersion = 'col-extract-r3';
+export const rulesVersion = 'col-extract-r4';
 export const posOf = raw => /^N(?:-|$)/u.test(raw) ? 'noun' : /^V(?:-|$)/u.test(raw) ? 'verb' : /^ADJ(?:-|$)/u.test(raw) ? 'adjective' : /^ADV(?:-|$)/u.test(raw) ? 'adverb' : ({ PRON: 'pronoun', PREP: 'preposition', CONJ: 'conjunction', DET: 'determiner', EXCLAM: 'interjection', INTERJ: 'interjection' })[raw] ?? 'unknown';
 const typedPos = n => n.tagName === 'span' && attr(n, 'title') && !has(n, 'phonetic');
 function labelKind(value) {
@@ -76,12 +76,13 @@ export function extract(source) {
         const pEvidence = { kind: 'PARAGRAPH', region, majorOrder, paragraphOrder, entryKey: current.entryKey, rawPos, labels, sourceRange: range(p) };
         evidence.push(pEvidence);
         if (/\b(?:(?:plural|past tense|past participle|comparative|superlative|abbreviation) of|same as(?:\s+(?:a|an|the|to))*|compare)\s*\./iu.test(body)) { issue('SOURCE_TEXT_DEFECT', region, 'relation', range(p)); continue; }
-        const explicitForm = body.match(/\b(plural|past tense|past participle|comparative|superlative) of\s+([A-Za-z][A-Za-z'-]*)\b/iu);
-        if (explicitForm) notes.push({ kind: 'EXPLICIT_INFLECTION', relation: explicitForm[1].toLowerCase(), target: explicitForm[2], region, sourceRange: range(p), ruleId: 'COL_EXPLICIT_ENGLISH_FORM', approvedMapping: false });
+        const escapedHead = current.headword.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+        const explicitForm = body.match(new RegExp(`^(?:${escapedHead}\\s+(?:is|are)\\s+(?:the\\s+)?|(?:the|a)\\s+)?(plural|past tense|past participle|comparative|superlative) of\\s+([A-Za-z][A-Za-z'-]*)(?=[.;]|$|\\s+in (?:American|British) English[.;]|\\s+\\p{Script=Han})`, 'iu'));
+        if (explicitForm) notes.push({ kind: 'EXPLICIT_INFLECTION', relation: explicitForm[1].toLowerCase(), target: explicitForm[2], region, componentOrder: current.componentOrder, sourceRange: range(p), ruleId: 'COL_EXPLICIT_ENGLISH_FORM', approvedMapping: false });
         const ref = reference(p, body);
         if (ref) {
           const r = { ...ref, region, componentOrder: current.componentOrder, root: false }; references.push(r);
-          if (ref.conflict) issue('REFERENCE_DISPLAY_CONFLICT', region, 'relation', ref.sourceRange);
+          if (ref.conflict && !['SEE_ALSO', 'COMPARE'].includes(ref.kind)) issue('REFERENCE_DISPLAY_CONFLICT', region, 'relation', ref.sourceRange);
           body = body.slice(0, ref.marker).trim();
           // A phrase label before an arrow is relation metadata, not a meaning.
           if (!/\p{Script=Han}/u.test(body)) continue;
@@ -114,7 +115,8 @@ export function extract(source) {
   }
   if (issues.length) return finish('FAIL', { parseErrors });
   if (!regions.length && references.length) {
-    for (const r of references) r.root = true;
+    for (const r of references) { r.root = true; if(r.conflict && !issues.some(i=>i.issueCode==='REFERENCE_DISPLAY_CONFLICT')) issue('REFERENCE_DISPLAY_CONFLICT',r.region,'relation',r.sourceRange); }
+    if(issues.length) return finish('FAIL', { parseErrors });
     return finish('ALIAS', { parseErrors });
   }
   if (!regions.length && outOfScope) return finish('SKIP', { reason: 'OUT_OF_SCOPE_PHRASE', parseErrors });
