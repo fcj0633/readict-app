@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { ApiError } from '../../lib/api';
@@ -272,10 +272,9 @@ export default function ReaderPage() {
     if (server?.anchor) await engineRef.current?.display(server.anchor);
   }
 
-  const pct = progress.version > 0 ? Math.max(0, Math.min(100, Math.round(progress.ratio * 100))) : null;
   const draft = settingsState.draft;
-  const readingWidth = draft?.width ?? manifest?.settings.width ?? 660;
   const theme = draft?.theme ?? manifest?.settings.theme ?? 'warm';
+  const readingWidth = draft?.width === 720 ? 'wide' : 'standard';
   const tocTree = useMemo(() => groupToc(manifest?.toc ?? []), [manifest?.toc]);
   const chapterLabel = spineHref
     ? findTocLabel(tocTree, spineHref) ?? manifest?.spine.find(item => item.href === spineHref)?.title
@@ -297,11 +296,12 @@ export default function ReaderPage() {
     </div>;
   }
 
-  return <div className="reader-shell" data-theme={theme} data-panel={panel === 'none' ? 'closed' : 'open'}>
+  return <div className="reader-shell" data-theme={theme} data-panel={panel === 'none' ? 'closed' : 'open'}
+    data-reading-width={readingWidth}>
     <ReaderTopbar title={title} chapter={chapterLabel} onBack={() => void leave()} />
 
     <main className="reader-stage">
-      <article className="reader-paper" style={{ '--reading-width': `${readingWidth}px` } as CSSProperties}>
+      <article className="reader-paper">
         <div className="reader-paper-inner">
           <div ref={hostRef} className="reader-canvas" data-phase={phase} />
           {progress.status === 'conflict' && <div className="reader-conflict" role="alert">
@@ -318,8 +318,6 @@ export default function ReaderPage() {
             </button>
             <div className="reader-meta">
               <span>{page.total > 0 ? `第 ${page.page} / ${page.total} 页` : '展开书页…'}</span>
-              <span className="reader-dot" aria-hidden="true" />
-              <span>全书 {pct === null ? '—' : `${pct}%`}</span>
               <SaveStatus status={progress.status} onRetry={() => saverRef.current?.retry()} />
               {notice && <span className="reader-restore-note" role="status">{notice}</span>}
             </div>
