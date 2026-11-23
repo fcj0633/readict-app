@@ -42,6 +42,26 @@ class EpubPipelineTest {
         assertThat(Files.exists(first.directory().resolve("cover.png"))).isTrue();
     }
 
+    @Test void refusesDoctypeAndEntityDeclarations() {
+        EpubPipeline pipeline = new EpubPipeline(EpubLimits.defaults(), JsonMapper.builder().build());
+        assertThatCode(() -> pipeline.build(EpubFixtures.dtdEntity(temp.resolve("dtd.epub")),
+                temp.resolve("out"), "dd".repeat(32), null))
+                .isInstanceOf(ImportFailure.class)
+                .satisfies(error -> assertThat(((ImportFailure) error).code()).isEqualTo("EPUB_INVALID_XHTML"));
+    }
+
+    @Test void acceptsDocumentsWithoutNavigationOrCover() throws Exception {
+        EpubPipeline pipeline = new EpubPipeline(EpubLimits.defaults(), JsonMapper.builder().build());
+        var built = pipeline.build(EpubFixtures.noNavigationNoCover(temp.resolve("plain.epub")),
+                temp.resolve("plain-out"), "ee".repeat(32), null);
+        assertThat(built.coverMime()).isNull();
+        assertThat(built.chapters()).hasSize(1);
+        var manifest = JsonMapper.builder().build().readTree(
+                Files.readAllBytes(built.directory().resolve("manifest.json")));
+        assertThat(manifest.path("tocSource").asString()).isEqualTo("SPINE");
+        assertThat(manifest.path("toc")).isEmpty();
+    }
+
     @Test void hostileDocumentLosesEveryExecutableConstruct() throws Exception {
         EpubPipeline pipeline = new EpubPipeline(EpubLimits.defaults(), JsonMapper.builder().build());
         var built = pipeline.build(EpubFixtures.hostile(temp.resolve("hostile.epub")), temp.resolve("out"), "bb".repeat(32), null);

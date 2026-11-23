@@ -51,6 +51,28 @@ class EpubReaderTest {
         assertThat(code).isEqualTo("EPUB_ENTRY_TOO_LARGE");
     }
 
+    @Test void enforcesEntryCountAndTotalBudget() {
+        EpubLimits fewEntries = new EpubLimits(EpubLimits.defaults().maxSourceBytes(), 3,
+                EpubLimits.defaults().maxEntryBytes(), EpubLimits.defaults().maxTotalBytes(), 512, 16, 1000,
+                8L * 1024 * 1024, 96L * 1024 * 1024, 8L * 1024 * 1024, 4L * 1024 * 1024, 4096, 65536, 60);
+        assertThat(code(() -> new EpubReader(fewEntries).read(EpubFixtures.epub3(temp.resolve("many.epub")))))
+                .isEqualTo("EPUB_ENTRY_LIMIT");
+        EpubLimits smallTotal = new EpubLimits(EpubLimits.defaults().maxSourceBytes(), 2500,
+                EpubLimits.defaults().maxEntryBytes(), 2048, 512, 16, 1000, 8L * 1024 * 1024,
+                96L * 1024 * 1024, 8L * 1024 * 1024, 4L * 1024 * 1024, 4096, 65536, 60);
+        assertThat(code(() -> new EpubReader(smallTotal).read(EpubFixtures.zipBomb(temp.resolve("total.epub"), 4096))))
+                .isEqualTo("EPUB_TOTAL_TOO_LARGE");
+    }
+
+    @Test void fallsBackToSpineAndNullCoverWhenMetadataIsMissing() {
+        var epub = new EpubReader(EpubLimits.defaults()).read(EpubFixtures.noNavigationNoCover(temp.resolve("plain.epub")));
+        assertThat(epub.tocSource()).isEqualTo("SPINE");
+        assertThat(epub.toc()).isEmpty();
+        assertThat(epub.cover()).isNull();
+        assertThat(epub.spine()).hasSize(1);
+        assertThat(epub.spine().get(0).title()).isEqualTo("Chapter 1");
+    }
+
     @Test void resolvesRelativeReferencesAndRejectsEscapes() {
         assertThat(EpubReader.resolve("OEBPS/Text/ch1.xhtml", "../Styles/a.css")).isEqualTo("OEBPS/Styles/a.css");
         assertThat(EpubReader.resolve("OEBPS/Text/ch1.xhtml", "%2e%2e/%2e%2e/%2e%2e/escape.xhtml")).isNull();

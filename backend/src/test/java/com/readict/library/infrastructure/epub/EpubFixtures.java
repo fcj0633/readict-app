@@ -112,6 +112,48 @@ public final class EpubFixtures {
         return write(target, "application/epub+zip", files);
     }
 
+    /** No navigation document and no cover: toc must fall back to the spine. */
+    public static Path noNavigationNoCover(Path target) {
+        Map<String, byte[]> files = new LinkedHashMap<>();
+        files.put("META-INF/container.xml", utf8(container("OEBPS/content.opf")));
+        files.put("OEBPS/content.opf", utf8("""
+                <?xml version="1.0" encoding="utf-8"?>
+                <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
+                 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                  <dc:identifier id="bookid">urn:test:plain</dc:identifier>
+                  <dc:title>Plain Book</dc:title>
+                  <dc:language>en</dc:language>
+                 </metadata>
+                 <manifest>
+                  <item id="ch1" href="Text/ch1.xhtml" media-type="application/xhtml+xml"/>
+                 </manifest>
+                 <spine><itemref idref="ch1"/></spine>
+                </package>
+                """));
+        files.put("OEBPS/Text/ch1.xhtml", utf8("""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <html xmlns="http://www.w3.org/1999/xhtml"><head><title>Plain</title></head>
+                <body><p>Plain text only.</p></body></html>
+                """));
+        return write(target, "application/epub+zip", files);
+    }
+
+    /** XHTML carrying a DOCTYPE/entity declaration: the secure parser must refuse it. */
+    public static Path dtdEntity(Path target) {
+        Map<String, byte[]> files = new LinkedHashMap<>();
+        files.put("META-INF/container.xml", utf8(container("OEBPS/content.opf")));
+        files.put("OEBPS/content.opf", utf8(opf3()));
+        files.put("OEBPS/nav.xhtml", utf8(nav()));
+        files.put("OEBPS/Text/ch1.xhtml", utf8("""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE html [<!ENTITY xxe SYSTEM "file:///c:/windows/win.ini">]>
+                <html xmlns="http://www.w3.org/1999/xhtml"><head><title>DTD</title></head>
+                <body><p>&xxe;</p></body></html>
+                """));
+        files.put("OEBPS/Text/ch2.xhtml", utf8(chapter2()));
+        return write(target, "application/epub+zip", files);
+    }
+
     public static Path write(Path target, String mimetype, Map<String, byte[]> files) {
         try {
             Files.createDirectories(target.getParent());
