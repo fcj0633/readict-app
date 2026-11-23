@@ -41,6 +41,11 @@ public class SecurityConfiguration {
                 .requestMatchers(HttpMethod.GET,"/api/v1/auth/me","/api/v1/me/settings").authenticated()
                 .requestMatchers(HttpMethod.GET,"/api/v1/dictionary/audio/*").authenticated()
                 .requestMatchers(HttpMethod.HEAD,"/api/v1/dictionary/audio/*").authenticated()
+                .requestMatchers(HttpMethod.GET,"/api/v1/books","/api/v1/books/imports/*","/api/v1/books/*",
+                        "/api/v1/books/*/cover","/api/v1/books/*/reader-manifest",
+                        "/api/v1/books/*/artifacts/*/epub","/api/v1/books/*/artifacts/*/text-index").authenticated()
+                .requestMatchers(HttpMethod.POST,"/api/v1/books/imports").authenticated()
+                .requestMatchers(HttpMethod.DELETE,"/api/v1/books/*").authenticated()
                 .requestMatchers(HttpMethod.PUT,"/api/v1/auth/password","/api/v1/me/settings").authenticated()
                 .requestMatchers(HttpMethod.POST,"/api/v1/auth/verification/challenges","/api/v1/auth/verification/verify").authenticated()
                 .anyRequest().denyAll())

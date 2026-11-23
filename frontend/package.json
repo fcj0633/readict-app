@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "tsx --test src/lib/*.test.ts src/features/auth/*.test.ts src/features/settings/*.test.ts"
+    "test": "tsx --test src/lib/*.test.ts src/features/auth/*.test.ts src/features/settings/*.test.ts src/features/library/*.test.ts"
   },
   "dependencies": {
     "react": "19.3.1",

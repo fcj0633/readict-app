@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.readict.library.infrastructure.persistence.mapper.ImportTaskMapper">
+  <resultMap id="entity" type="com.readict.library.infrastructure.persistence.entity.ImportTaskEntity">
+    <result property="id" column="id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="userId" column="user_id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="bookId" column="book_id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="state" column="state"/>
+    <result property="stage" column="stage"/>
+    <result property="attempt" column="attempt"/>
+    <result property="nextAttemptAt" column="next_attempt_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+    <result property="leaseToken" column="lease_token" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="leaseUntil" column="lease_until" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+    <result property="requestId" column="request_id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="requestHash" column="request_hash" jdbcType="BINARY"/>
+    <result property="errorCode" column="error_code"/>
+    <result property="safeErrorMessage" column="safe_error_message"/>
+    <result property="cleanupPending" column="cleanup_pending"/>
+    <result property="createdAt" column="created_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+    <result property="updatedAt" column="updated_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+  </resultMap>
+
+  <sql id="columns">id,user_id,book_id,state,stage,attempt,next_attempt_at,lease_token,lease_until,request_id,request_hash,error_code,safe_error_message,cleanup_pending,created_at,updated_at</sql>
+
+  <select id="findByRequest" resultMap="entity">
+    SELECT <include refid="columns"/> FROM import_task
+     WHERE user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND request_id=#{requestId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+  </select>
+
+  <select id="findOwned" resultMap="entity">
+    SELECT <include refid="columns"/> FROM import_task
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+  </select>
+
+  <select id="currentForBook" resultMap="entity">
+    SELECT <include refid="columns"/> FROM import_task
+     WHERE book_id=#{bookId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+     ORDER BY created_at DESC LIMIT 1
+  </select>
+
+  <select id="countActive" resultType="int">
+    SELECT COUNT(*) FROM import_task
+     WHERE user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND state IN ('QUEUED','RUNNING')
+  </select>
+
+  <select id="countQueued" resultType="int">
+    SELECT COUNT(*) FROM import_task WHERE state='QUEUED'
+  </select>
+
+  <update id="markCleanupPending">
+    UPDATE import_task SET cleanup_pending=TRUE
+     WHERE book_id=#{bookId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+  </update>
+
+  <select id="candidate" resultType="java.util.UUID">
+    SELECT id FROM import_task
+     WHERE state='QUEUED'
+       AND (next_attempt_at IS NULL OR next_attempt_at &lt;= #{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler})
+     ORDER BY created_at LIMIT 1
+     FOR UPDATE SKIP LOCKED
+  </select>
+
+  <update id="claim">
+    UPDATE import_task SET state='RUNNING', stage='VALIDATING', attempt=attempt+1,
+           lease_token=#{token,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler},
+           lease_until=#{until,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler},
+           next_attempt_at=NULL,
+           updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler} AND state='QUEUED'
+  </update>
+
+  <update id="renew">
+    UPDATE import_task SET lease_until=#{until,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler},
+           updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND lease_token=#{token,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND state='RUNNING'
+       AND lease_until &gt; #{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+  </update>
+
+  <update id="stage">
+    UPDATE import_task SET stage=#{stage}, updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND lease_token=#{token,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND state='RUNNING'
+       AND lease_until &gt; #{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+  </update>
+
+  <update id="succeed">
+    UPDATE import_task SET state='SUCCEEDED', lease_token=NULL, lease_until=NULL,
+           error_code=NULL, safe_error_message=NULL,
+           updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND lease_token=#{token,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND state='RUNNING'
+       AND lease_until &gt; #{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+  </update>
+
+  <update id="fail">
+    UPDATE import_task SET state='FAILED', error_code=#{code}, safe_error_message=#{message},
+           lease_token=NULL, lease_until=NULL,
+           updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND lease_token=#{token,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND state='RUNNING'
+  </update>
+
+  <update id="failQueued">
+    UPDATE import_task SET state='FAILED', error_code=#{code}, safe_error_message=#{message},
+           updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND state='QUEUED'
+  </update>
+
+  <update id="requeue">
+    UPDATE import_task SET state='QUEUED', stage='VALIDATING', lease_token=NULL, lease_until=NULL,
+           next_attempt_at=#{nextAt,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler},
+           error_code=NULL, safe_error_message=NULL,
+           updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND lease_token=#{token,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND state='RUNNING'
+  </update>
+
+  <update id="requeueExpired">
+    UPDATE import_task SET state='QUEUED', stage='VALIDATING', lease_token=NULL, lease_until=NULL,
+           next_attempt_at=#{nextAt,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler},
+           error_code=NULL, safe_error_message=NULL,
+           updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE state='RUNNING'
+       AND lease_until &lt; #{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+       AND attempt &lt; #{maxAttempts}
+  </update>
+
+  <update id="failExpired">
+    UPDATE import_task SET state='FAILED', error_code='INTERNAL_ERROR', safe_error_message='导入执行超时，已停止',
+           lease_token=NULL, lease_until=NULL,
+           updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE state='RUNNING'
+       AND lease_until &lt; #{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+       AND attempt &gt;= 3
+  </update>
+</mapper>

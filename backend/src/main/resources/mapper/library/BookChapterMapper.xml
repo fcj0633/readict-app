@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.readict.library.infrastructure.persistence.mapper.BookChapterMapper">
+  <resultMap id="entity" type="com.readict.library.infrastructure.persistence.entity.BookChapterEntity">
+    <result property="id" column="id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="artifactId" column="artifact_id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="spineIndex" column="spine_index"/>
+    <result property="spineHref" column="spine_href"/>
+    <result property="hrefHash" column="href_hash" jdbcType="BINARY"/>
+    <result property="title" column="title"/>
+    <result property="textLength" column="text_length"/>
+    <result property="cumulativeTextLength" column="cumulative_text_length"/>
+    <result property="createdAt" column="created_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+  </resultMap>
+
+  <select id="listByArtifact" resultMap="entity">
+    SELECT id,artifact_id,spine_index,spine_href,href_hash,title,text_length,cumulative_text_length,created_at
+      FROM book_chapter WHERE artifact_id=#{artifactId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+     ORDER BY spine_index
+  </select>
+</mapper>

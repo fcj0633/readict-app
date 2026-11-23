@@ -1,0 +1,100 @@
+CREATE TABLE book (
+  id BINARY(16) NOT NULL,
+  user_id BINARY(16) NOT NULL,
+  origin_key BINARY(16) NOT NULL,
+  source_hash BINARY(32) NOT NULL,
+  source_size BIGINT NOT NULL,
+  title VARCHAR(512) NOT NULL,
+  author VARCHAR(512) NULL,
+  original_filename VARCHAR(255) NOT NULL,
+  status VARCHAR(16) CHARACTER SET ascii NOT NULL,
+  active_artifact_id BINARY(16) NULL,
+  last_read_at DATETIME(3) NOT NULL,
+  created_at DATETIME(3) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_book_source (user_id, source_hash),
+  KEY ix_book_shelf (user_id, status, last_read_at, id),
+  KEY ix_book_origin (user_id, origin_key),
+  CONSTRAINT fk_book_user FOREIGN KEY (user_id) REFERENCES app_user(id),
+  CONSTRAINT ck_book_status CHECK (status IN ('IMPORTING','READY','FAILED','BROKEN','DELETING')),
+  CONSTRAINT ck_book_size CHECK (source_size > 0 AND source_size <= 26214400),
+  CONSTRAINT ck_book_read CHECK (last_read_at >= created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE book_artifact (
+  id BINARY(16) NOT NULL,
+  book_id BINARY(16) NOT NULL,
+  artifact_hash BINARY(32) NOT NULL,
+  pipeline_version VARCHAR(64) CHARACTER SET ascii NOT NULL,
+  epub_storage_key VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  index_storage_key VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  manifest_storage_key VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  cover_storage_key VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL,
+  cover_mime VARCHAR(32) CHARACTER SET ascii NULL,
+  cover_hash BINARY(32) NULL,
+  total_utf16 BIGINT NOT NULL,
+  status VARCHAR(16) CHARACTER SET ascii NOT NULL,
+  created_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_artifact_identity (book_id, pipeline_version, artifact_hash),
+  KEY ix_artifact_book (book_id, created_at),
+  CONSTRAINT fk_artifact_book FOREIGN KEY (book_id) REFERENCES book(id),
+  CONSTRAINT ck_artifact_status CHECK (status IN ('READY','REVOKED')),
+  CONSTRAINT ck_artifact_total CHECK (total_utf16 >= 0),
+  CONSTRAINT ck_artifact_cover CHECK ((cover_storage_key IS NULL) = (cover_mime IS NULL)
+    AND (cover_storage_key IS NULL) = (cover_hash IS NULL)),
+  CONSTRAINT ck_artifact_mime CHECK (cover_mime IS NULL OR cover_mime IN ('image/jpeg','image/png'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE book_chapter (
+  id BINARY(16) NOT NULL,
+  artifact_id BINARY(16) NOT NULL,
+  spine_index INT NOT NULL,
+  spine_href VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  href_hash BINARY(32) NOT NULL,
+  title VARCHAR(512) NOT NULL,
+  text_length BIGINT NOT NULL,
+  cumulative_text_length BIGINT NOT NULL,
+  created_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_chapter_spine (artifact_id, spine_index),
+  UNIQUE KEY uk_chapter_href (artifact_id, href_hash),
+  CONSTRAINT fk_chapter_artifact FOREIGN KEY (artifact_id) REFERENCES book_artifact(id),
+  CONSTRAINT ck_chapter_index CHECK (spine_index >= 0),
+  CONSTRAINT ck_chapter_length CHECK (text_length >= 0 AND cumulative_text_length >= text_length)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE import_task (
+  id BINARY(16) NOT NULL,
+  user_id BINARY(16) NOT NULL,
+  book_id BINARY(16) NULL,
+  state VARCHAR(16) CHARACTER SET ascii NOT NULL,
+  stage VARCHAR(16) CHARACTER SET ascii NOT NULL,
+  attempt INT NOT NULL DEFAULT 0,
+  next_attempt_at DATETIME(3) NULL,
+  lease_token BINARY(16) NULL,
+  lease_until DATETIME(3) NULL,
+  request_id BINARY(16) NOT NULL,
+  request_hash BINARY(32) NOT NULL,
+  error_code VARCHAR(64) CHARACTER SET ascii NULL,
+  safe_error_message VARCHAR(255) NULL,
+  cleanup_pending BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at DATETIME(3) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_task_request (user_id, request_id),
+  KEY ix_task_claim (state, next_attempt_at, created_at),
+  KEY ix_task_book (book_id),
+  KEY ix_task_lease (state, lease_until),
+  CONSTRAINT fk_task_user FOREIGN KEY (user_id) REFERENCES app_user(id),
+  CONSTRAINT fk_task_book FOREIGN KEY (book_id) REFERENCES book(id) ON DELETE SET NULL,
+  CONSTRAINT ck_task_state CHECK (state IN ('QUEUED','RUNNING','SUCCEEDED','FAILED')),
+  CONSTRAINT ck_task_stage CHECK (stage IN ('VALIDATING','PARSING','SANITIZING','PUBLISHING')),
+  CONSTRAINT ck_task_attempt CHECK (attempt >= 0 AND attempt <= 3),
+  CONSTRAINT ck_task_lease CHECK ((lease_token IS NULL) = (lease_until IS NULL)),
+  CONSTRAINT ck_task_error CHECK ((state = 'FAILED') = (error_code IS NOT NULL))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE book
+  ADD CONSTRAINT fk_book_active_artifact FOREIGN KEY (active_artifact_id) REFERENCES book_artifact(id);

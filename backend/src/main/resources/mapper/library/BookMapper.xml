@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.readict.library.infrastructure.persistence.mapper.BookMapper">
+  <resultMap id="entity" type="com.readict.library.infrastructure.persistence.entity.BookEntity">
+    <result property="id" column="id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="userId" column="user_id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="originKey" column="origin_key" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="sourceHash" column="source_hash" jdbcType="BINARY"/>
+    <result property="sourceSize" column="source_size"/>
+    <result property="title" column="title"/>
+    <result property="author" column="author"/>
+    <result property="originalFilename" column="original_filename"/>
+    <result property="status" column="status"/>
+    <result property="activeArtifactId" column="active_artifact_id" jdbcType="BINARY" typeHandler="com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler"/>
+    <result property="lastReadAt" column="last_read_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+    <result property="createdAt" column="created_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+    <result property="updatedAt" column="updated_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+  </resultMap>
+
+  <sql id="columns">id,user_id,origin_key,source_hash,source_size,title,author,original_filename,status,active_artifact_id,last_read_at,created_at,updated_at</sql>
+
+  <select id="findOwned" resultMap="entity">
+    SELECT <include refid="columns"/> FROM book
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+  </select>
+
+  <select id="lockOwned" resultMap="entity">
+    SELECT <include refid="columns"/> FROM book
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+     FOR UPDATE
+  </select>
+
+  <select id="findBySource" resultMap="entity">
+    SELECT <include refid="columns"/> FROM book
+     WHERE user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND source_hash=#{sourceHash,jdbcType=BINARY}
+  </select>
+
+  <select id="shelf" resultMap="entity">
+    SELECT <include refid="columns"/> FROM book
+     WHERE user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND status IN ('IMPORTING','READY','FAILED','BROKEN')
+    <if test="q != null">AND (title LIKE #{q} ESCAPE '!' OR author LIKE #{q} ESCAPE '!')</if>
+    <if test="cursorTime != null">AND (last_read_at &lt; #{cursorTime,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+         OR (last_read_at = #{cursorTime,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+         AND id &lt; #{cursorId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}))</if>
+     ORDER BY last_read_at DESC, id DESC
+     LIMIT #{limit}
+  </select>
+
+  <update id="markReady">
+    UPDATE book SET status='READY', active_artifact_id=#{artifactId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler},
+                    last_read_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler},
+                    updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler} AND status='IMPORTING'
+  </update>
+
+  <update id="markFailed">
+    UPDATE book SET status='FAILED', updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler} AND status='IMPORTING'
+  </update>
+
+  <update id="markDeleting">
+    UPDATE book SET status='DELETING', updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND status IN ('READY','FAILED','BROKEN','IMPORTING')
+  </update>
+
+  <update id="reimport">
+    UPDATE book SET status='IMPORTING', source_size=#{sourceSize}, original_filename=#{originalFilename},
+                    last_read_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler},
+                    updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND status IN ('FAILED','BROKEN')
+  </update>
+
+  <update id="updateMetadata">
+    UPDATE book SET title=#{title}, author=#{author},
+                    updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+  </update>
+
+  <update id="markFailedWithoutOpenTask">
+    UPDATE book b SET b.status='FAILED',
+           b.updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE b.status='IMPORTING'
+       AND NOT EXISTS (SELECT 1 FROM import_task t WHERE t.book_id=b.id AND t.state IN ('QUEUED','RUNNING'))
+  </update>
+</mapper>

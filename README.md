@@ -119,3 +119,23 @@ java -jar $readictTool audio-activate --dataset <音频数据集UUID> --expected
 `AudioCatalog.find` 是独立内部接口，按实际展示词头返回录音、口音及音频版本，不改变 COL 音标或文字查询结果。鉴权播放为 `GET/HEAD /api/v1/dictionary/audio/{audioId}`，支持单段 Range、ETag 和 If-Range；认证检查先于条件请求。未登录401、非法标识400、不可访问资源404、未配置或读取故障503。音频目录和导入不提供 HTTP 入口。正式卡片播放待 M05；机器解码和浏览器媒体事件不替代人工试听。数据权利仍 UNVERIFIED，不允许快照或分发。
 
 本轮按 MVP 使用：导入冻结清单，媒体逐文件核验后直接发布至私有目录，READY 复用发布结果并核对数据库计数；启用复用 READY 校验结果并检查计数及活动版本，播放时校验实际摘要。完整复验、存储巡检和断电恢复后置，未声称全面验收；独立 `audio-validate` 仍可按需执行完整媒体校验。
+
+## M03 本机书籍导入与书架
+
+范围：私有存储、有界上传、EPUB 解析与清洗、确定性阅读产物与文本索引、导入任务、书架 API 与前端书架页。M04 的阅读器与进度、M05 查词、M06 收藏、M07 翻译、M08 清理巡检、M09 阶段验收仍未开发。
+
+环境：书籍私有根目录用 `READICT_BOOK_STORAGE_ROOT`，末级目录名必须为 `readict_test`／`readict_dev`，未配置时书籍接口返回 503，其他模块不受影响。上传上限 25 MiB；`spring.servlet.multipart` 已在 `application.yml` 设为 26 MB／28 MB 并由业务再校验。V7 已在 `readict_test` 执行；**`readict_dev` 尚未迁移**，需在测试库验收通过后经批准单独执行。
+
+```powershell
+# backend/：普通单测与真实 MySQL 集成。集成前加载 test 单一环境凭据并设置私有存储根。
+$env:READICT_BOOK_STORAGE_ROOT = '<仓库>\.local\tmp\it-books\readict_test'
+mvn test
+mvn -Pmysql-it verify
+# frontend/：npm ci、lint、test、build
+```
+
+接口（均需 Session；变更需 CSRF；上传与删除需 `Idempotency-Key`）：`GET /api/v1/books`、`POST /api/v1/books/imports`、`GET /api/v1/books/imports/{id}`、`GET /api/v1/books/{id}`、`DELETE /api/v1/books/{id}`、`GET /api/v1/books/{id}/cover`、`GET /api/v1/books/{id}/reader-manifest`、`GET /api/v1/books/{id}/artifacts/{artifactId}/epub`、`GET .../text-index?spineHref=`。
+
+不变量：READY 必须对应已发布且摘要一致的产物；同源文件重复导入复用书籍；跨用户资源一律 404；产物无脚本、无外部引用；同一源文件两次处理 `artifactHash` 一致；删除只置 DELETING 并登记待清理，物理回收留给 M08。
+
+限制与未验收项：前端书架页未做本机浏览器人工检查；A03（无封面）、A07（DTD）、A11（崩溃接管）、A12（发布后 DB 失败）、A20 的清理执行等仅有单测或未覆盖，详见设计仓库 [M03 实施记录](../readict-design/validation/implementation/m03/2026-11-23-local/README.md)。`artifactId` 下载不支持 Range；阅读器未接入，书架“打开”按钮为禁用占位。

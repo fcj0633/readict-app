@@ -31,6 +31,11 @@ spring:
   sql:
     init:
       mode: never
+  servlet:
+    multipart:
+      max-file-size: 26MB
+      max-request-size: 28MB
+      file-size-threshold: 0
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
   type-handlers-package: com.readict.shared.persistence.typehandler
@@ -44,6 +49,16 @@ mybatis-plus:
     db-config:
       id-type: input
 readict:
+  library:
+    storage-root: ${READICT_BOOK_STORAGE_ROOT:}
+    import:
+      concurrency: 1
+      queue-capacity: 10
+      per-user-limit: 2
+      lease-seconds: 90
+      renew-seconds: 20
+      max-attempts: 3
+      timeout-seconds: 60
   auth:
     rate-hmac-key: ${AUTH_RATE_HMAC_KEY:}
   verification:
