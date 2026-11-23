@@ -139,6 +139,17 @@ export class EpubJsEngine implements ReaderEngine {
     return item ? { href: item.href, index: item.index } : null;
   }
 
+  pageInfo(): { page: number; total: number; atStart: boolean; atEnd: boolean } | null {
+    const location = this.lastLocation;
+    if (!location) return null;
+    return {
+      page: location.start.displayed?.page ?? 0,
+      total: location.start.displayed?.total ?? 0,
+      atStart: location.atStart ?? false,
+      atEnd: location.atEnd ?? false,
+    };
+  }
+
   subscribe(listener: (event: ReaderEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

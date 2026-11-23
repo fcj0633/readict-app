@@ -107,6 +107,7 @@ export interface ReaderEngine {
   applyPreferences(preferences: ReaderPreferences): Promise<void>;
   anchor(): ReadingAnchor | null;
   currentSpine(): { href: string; index: number } | null;
+  pageInfo(): { page: number; total: number; atStart: boolean; atEnd: boolean } | null;
   subscribe(listener: (event: ReaderEvent) => void): () => void;
   destroy(): Promise<void>;
 }

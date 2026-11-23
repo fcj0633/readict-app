@@ -105,18 +105,19 @@ function decodeAnchor(value: unknown): ReadingAnchor {
   return anchor;
 }
 
+export function decodeProgressValue(value: unknown): ReadingProgress {
+  if (!object(value) || typeof value.progressRatio !== 'number') invalid();
+  return {
+    bookId: text(value.bookId, 64), anchor: decodeAnchor(value.anchor),
+    progressRatio: value.progressRatio, version: int(value.version, 1, Number.MAX_SAFE_INTEGER),
+    updatedAt: text(value.updatedAt, 40),
+  };
+}
+
 export function decodeProgress(value: unknown): { progress: ReadingProgress | null } {
   if (!object(value)) invalid();
   if (value.progress === null || value.progress === undefined) return { progress: null };
-  const progress = value.progress;
-  if (!object(progress) || typeof progress.progressRatio !== 'number') invalid();
-  return {
-    progress: {
-      bookId: text(progress.bookId, 64), anchor: decodeAnchor(progress.anchor),
-      progressRatio: progress.progressRatio, version: int(progress.version, 1, Number.MAX_SAFE_INTEGER),
-      updatedAt: text(progress.updatedAt, 40),
-    },
-  };
+  return { progress: decodeProgressValue(value.progress) };
 }
 
 async function json(response: Response): Promise<unknown> {
@@ -180,7 +181,7 @@ export async function saveProgress(bookId: string, body: {
     throw conflict;
   }
   if (!response.ok) throw problem(response, payload);
-  return decodeProgress(payload).progress ?? invalid();
+  return decodeProgressValue(payload);
 }
 
 function problem(response: Response, payload: unknown): ApiError {

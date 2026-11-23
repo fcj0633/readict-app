@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { ApiError } from '../../lib/api';
 import { request } from '../../lib/http';
 import { useAuth } from '../auth/AuthProvider';
@@ -8,13 +9,16 @@ import { PreferenceSaver, settingsApi, type Preferences, type SaveState } from '
 import { downloadEpub, loadChapterIndex, loadManifest, loadProgress } from './api';
 import { EpubJsEngine } from './engine/EpubJsEngine';
 import type {
-  ManifestTocNode, ReaderManifest, ReaderPhase, ReaderPreferences, ReadingAnchor,
+  ReaderManifest, ReaderPhase, ReaderPreferences, ReadingAnchor,
 } from './engine/types';
 import { ProgressSaver, type ProgressState } from './progress/model';
-import { ReaderHeader, ReaderRail } from './ReaderLayout';
+import { ContentsPanel, SettingsPanel } from './ReaderPanels';
+import { ReaderRail, ReaderTopbar, SaveStatus, type ReaderPanelName } from './ReaderLayout';
+import { findWordRect, type AnchorRect } from './preview/position';
+import { previewEntry } from './preview/fixture';
+import { DictionaryPreviewCard } from './preview/DictionaryPreviewCard';
+import { findTocLabel, groupToc, sameChapter } from './toc';
 import './reader.css';
-
-type Panel = 'none' | 'contents' | 'settings';
 
 const EMPTY_PROGRESS: ProgressState = { status: 'idle', version: 0, anchor: null, ratio: 0, dirty: false };
 
@@ -40,15 +44,6 @@ function firstAnchor(manifest: ReaderManifest): ReadingAnchor | null {
   };
 }
 
-function flattenToc(nodes: ManifestTocNode[]): ManifestTocNode[] {
-  const result: ManifestTocNode[] = [];
-  const walk = (items: ManifestTocNode[]) => {
-    for (const item of items) { result.push(item); walk(item.children); }
-  };
-  walk(nodes);
-  return result;
-}
-
 export default function ReaderPage() {
   const { bookId = '' } = useParams();
   const auth = useAuth();
@@ -65,16 +60,27 @@ export default function ReaderPage() {
   const [phase, setPhase] = useState<ReaderPhase>('loading');
   const [manifest, setManifest] = useState<ReaderManifest | null>(null);
   const [title, setTitle] = useState('阅读');
+  const [spineHref, setSpineHref] = useState<string | null>(null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [page, setPage] = useState({ page: 0, total: 0 });
   const [boundary, setBoundary] = useState({ atStart: true, atEnd: false });
-  const [panel, setPanel] = useState<Panel>('none');
+  const [panel, setPanel] = useState<ReaderPanelName>('none');
   const [progress, setProgress] = useState<ProgressState>(EMPTY_PROGRESS);
   const [settingsState, setSettingsState] = useState<SaveState>({ status: 'loading' });
   const [reloadToken, setReloadToken] = useState(0);
+  const [previewAnchor, setPreviewAnchor] = useState<AnchorRect | null>(null);
+
+  const dictionaryPreviewEnabled = import.meta.env.DEV
+    && new URLSearchParams(window.location.search).get('preview') === 'dictionary';
 
   const enterPhase = useCallback((value: ReaderPhase) => { phaseRef.current = value; setPhase(value); }, []);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   useEffect(() => {
     if (!bookId) return;
@@ -85,6 +91,7 @@ export default function ReaderPage() {
     let preferenceSaver: PreferenceSaver | null = null;
     enterPhase('loading');
     setError(null); setNotice(null); setManifest(null); setProgress(EMPTY_PROGRESS);
+    setPanel('none'); setPreviewAnchor(null); setSpineHref(null);
 
     void (async () => {
       try {
@@ -110,7 +117,7 @@ export default function ReaderPage() {
           onKey: key => {
             if (key === 'next') void engineRef.current?.next();
             else if (key === 'previous') void engineRef.current?.previous();
-            else if (key === 'escape') setPanel('none');
+            else if (key === 'escape') { setPreviewAnchor(null); setPanel('none'); }
           },
         });
         engineRef.current = engine;
@@ -118,6 +125,8 @@ export default function ReaderPage() {
           if (event.type === 'relocated') {
             setPage({ page: event.page, total: event.totalPages });
             setBoundary({ atStart: event.atStart, atEnd: event.atEnd });
+            setSpineHref(event.spineHref || null);
+            setPreviewAnchor(null);
             if (phaseRef.current === 'ready' && event.anchor && event.anchor.cfi !== lastAnchor.current
                 && Date.now() - readyAt.current > 800) {
               lastAnchor.current = event.anchor.cfi;
@@ -145,10 +154,17 @@ export default function ReaderPage() {
         }
         lastAnchor.current = engine.anchor()?.cfi ?? null;
         readyAt.current = Date.now();
+        setSpineHref(engine.currentSpine()?.href ?? loaded.spine[0]?.href ?? null);
+        const initialPage = engine.pageInfo();
+        if (initialPage) {
+          setPage({ page: initialPage.page, total: initialPage.total });
+          setBoundary({ atStart: initialPage.atStart, atEnd: initialPage.atEnd });
+        }
         enterPhase('ready');
         preferenceSaver = new PreferenceSaver(setSettingsState, settingsApi);
         settingsRef.current = preferenceSaver;
         void preferenceSaver.load();
+        if (dictionaryPreviewEnabled) window.setTimeout(openDictionaryPreview, 400);
       } catch (caught) {
         if (controller.signal.aborted) return;
         const code = caught instanceof ApiError ? caught.code : 'ENGINE_INIT_FAILED';
@@ -191,26 +207,62 @@ export default function ReaderPage() {
   }, []);
 
   useEffect(() => {
+    const close = () => setPreviewAnchor(null);
+    window.addEventListener('resize', close);
+    return () => window.removeEventListener('resize', close);
+  }, []);
+
+  useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (previewAnchor) { setPreviewAnchor(null); return; }
+        if (panel !== 'none') setPanel('none');
+        return;
+      }
       if (phaseRef.current !== 'ready') return;
       const target = event.target as HTMLElement | null;
       if (target && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(target.tagName))) return;
-      if (panel !== 'none') { if (event.key === 'Escape') setPanel('none'); return; }
+      if (panel !== 'none' || previewAnchor) return;
       if (event.key === 'ArrowRight') { event.preventDefault(); void engineRef.current?.next(); }
       else if (event.key === 'ArrowLeft') { event.preventDefault(); void engineRef.current?.previous(); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [panel]);
+  }, [panel, previewAnchor]);
+
+  function openDictionaryPreview() {
+    const iframe = hostRef.current?.querySelector('iframe');
+    const document_ = iframe?.contentDocument;
+    if (!iframe || !document_?.body) return;
+    const rect = findWordRect(document_, previewEntry.word);
+    if (!rect) return;
+    const frame = iframe.getBoundingClientRect();
+    setPreviewAnchor({
+      left: frame.left + rect.left, top: frame.top + rect.top,
+      right: frame.left + rect.right, bottom: frame.top + rect.bottom,
+      width: rect.width, height: rect.height,
+    });
+  }
 
   const leave = async () => { await saverRef.current?.flush(); navigate('/books'); };
 
+  function togglePanel(next: Exclude<ReaderPanelName, 'none'>) {
+    setPreviewAnchor(null);
+    setPanel(current => current === next ? 'none' : next);
+  }
+
+  function closePanel() { setPanel('none'); }
+
   async function goToTocHref(href: string) {
     if (!manifest || !engineRef.current) return;
+    const target = manifest.spine.find(item => sameChapter(item.href, href));
+    const nextHref = target?.href ?? href.split('#')[0] ?? href;
     setPanel('none');
+    setPreviewAnchor(null);
+    setSpineHref(nextHref);
     await engineRef.current.display({
       artifactId: manifest.artifactId, artifactHash: manifest.artifactHash,
-      pipelineVersion: manifest.pipelineVersion, spineHref: href, cfi: '',
+      pipelineVersion: manifest.pipelineVersion, spineHref: nextHref, cfi: '',
     });
   }
 
@@ -222,74 +274,90 @@ export default function ReaderPage() {
 
   const pct = progress.version > 0 ? Math.max(0, Math.min(100, Math.round(progress.ratio * 100))) : null;
   const draft = settingsState.draft;
+  const readingWidth = draft?.width ?? manifest?.settings.width ?? 660;
+  const theme = draft?.theme ?? manifest?.settings.theme ?? 'warm';
+  const tocTree = useMemo(() => groupToc(manifest?.toc ?? []), [manifest?.toc]);
+  const chapterLabel = spineHref
+    ? findTocLabel(tocTree, spineHref) ?? manifest?.spine.find(item => item.href === spineHref)?.title
+    : undefined;
 
   if (phase === 'error') {
-    return <div className="reader-shell">
-      <div className="reader-body"><div className="reader-content"><div className="reader-error">
+    return <div className="reader-shell" data-theme={theme}>
+      <ReaderTopbar title={title} onBack={() => void leave()} />
+      <main className="reader-stage"><div className="reader-error">
+        <p className="reader-error-kicker">阅读器</p>
         <h2>这本书暂时无法打开</h2>
         <p>{error?.message ?? '请稍后重试。'}</p>
         <p className="reader-error-code">错误码：{error?.code ?? 'ENGINE_INIT_FAILED'}</p>
         <div className="reader-error-actions">
-          <button type="button" onClick={() => setReloadToken(value => value + 1)}>重新加载</button>
-          <button type="button" onClick={() => void leave()}>返回书架</button>
+          <button type="button" className="reader-choice" onClick={() => setReloadToken(value => value + 1)}>重新加载</button>
+          <button type="button" className="reader-choice" onClick={() => void leave()}>返回书架</button>
         </div>
-      </div></div></div>
+      </div></main>
     </div>;
   }
 
-  return <div className="reader-shell">
-    <ReaderHeader title={title} onToc={() => setPanel(panel === 'contents' ? 'none' : 'contents')}
-      onSettings={() => setPanel(panel === 'settings' ? 'none' : 'settings')} />
-    {notice && <p className="reader-notice" role="status">{notice}</p>}
-    {progress.status === 'conflict' && <div className="reader-banner" role="alert">
-      <span>阅读位置已在其他窗口更新。</span>
-      <button type="button" onClick={() => void adoptServerPosition()}>以服务器位置为准</button>
-      <button type="button" onClick={() => void saverRef.current?.resolveKeepLocal()}>继续此处</button>
-    </div>}
-    {progress.status === 'unsynced' && !progress.conflict && <div className="reader-banner" role="status">
-      <span>阅读位置尚未同步。{progress.error ? `（${progress.error}）` : ''}</span>
-      <button type="button" onClick={() => saverRef.current?.retry()}>重试保存</button>
-    </div>}
+  return <div className="reader-shell" data-theme={theme} data-panel={panel === 'none' ? 'closed' : 'open'}>
+    <ReaderTopbar title={title} chapter={chapterLabel} onBack={() => void leave()} />
 
-    <div className="reader-body">
-      <div className="reader-content">
-        <div ref={hostRef} className="reader-canvas" data-phase={phase}
-          style={{ maxWidth: manifest ? `${manifest.settings.width}px` : undefined }} />
-      </div>
-      <ReaderRail onToc={() => setPanel(panel === 'contents' ? 'none' : 'contents')}
-        onFavorites={() => setNotice('收藏功能将在 M06 接入')}
-        onSettings={() => setPanel(panel === 'settings' ? 'none' : 'settings')} />
-      {panel === 'contents' && <aside className="reader-panel" role="dialog" aria-label="章节目录">
-        <h2>章节目录</h2>
-        {manifest && flattenToc(manifest.toc).length > 0
-          ? <ul>{flattenToc(manifest.toc).map((node, index) => <li key={`${node.id}-${index}`}>
-              <button type="button" onClick={() => void goToTocHref(node.href)}>{node.label}</button>
-            </li>)}</ul>
-          : <ul>{manifest?.spine.map(item => <li key={item.chapterId}>
-              <button type="button" onClick={() => void goToTocHref(item.href)}>{item.title}</button>
-            </li>)}</ul>}
-      </aside>}
-      {panel === 'settings' && <aside className="reader-panel" role="dialog" aria-label="阅读设置">
-        <h2>阅读设置</h2>
-        {draft ? <>
-          <label>字号<select value={draft.fontSize} onChange={event => settingsRef.current?.edit({ ...draft, fontSize: Number(event.target.value) })}>
-            {[18, 20, 22, 24].map(size => <option key={size} value={size}>{size}px</option>)}</select></label>
-          <label>行距<select value={draft.lineHeight} onChange={event => settingsRef.current?.edit({ ...draft, lineHeight: Number(event.target.value) })}>
-            {[1.6, 1.8, 2].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-          <label>主题<select value={draft.theme} onChange={event => settingsRef.current?.edit({ ...draft, theme: event.target.value })}>
-            <option value="white">清白</option><option value="warm">暖纸</option><option value="dark">夜读</option></select></label>
-          <label>正文宽度<select value={draft.width} onChange={event => settingsRef.current?.edit({ ...draft, width: Number(event.target.value) })}>
-            <option value={660}>适中</option><option value={720}>宽松</option></select></label>
-          {settingsState.status === 'conflict' && <p className="reader-banner">设置已在其他页面更新，请到设置页处理。</p>}
-          {settingsState.status === 'unsynced' && <p className="reader-notice">设置尚未同步。</p>}
-        </> : <p>正在读取设置…</p>}
-      </aside>}
-    </div>
+    <main className="reader-stage">
+      <article className="reader-paper" style={{ '--reading-width': `${readingWidth}px` } as CSSProperties}>
+        <div className="reader-paper-inner">
+          <div ref={hostRef} className="reader-canvas" data-phase={phase} />
+          {progress.status === 'conflict' && <div className="reader-conflict" role="alert">
+            <p>阅读位置已在其他窗口更新。</p>
+            <div className="reader-conflict-actions">
+              <button type="button" className="reader-choice" onClick={() => void adoptServerPosition()}>用服务器位置</button>
+              <button type="button" className="reader-choice" onClick={() => void saverRef.current?.resolveKeepLocal()}>保留此处</button>
+            </div>
+          </div>}
+          <footer className="reader-pagebar">
+            <button type="button" className="reader-turn" onClick={() => void engineRef.current?.previous()}
+              disabled={phase !== 'ready' || boundary.atStart} aria-label="上一页">
+              <ChevronLeft size={16} strokeWidth={1.7} aria-hidden="true" />上一页
+            </button>
+            <div className="reader-meta">
+              <span>{page.total > 0 ? `第 ${page.page} / ${page.total} 页` : '展开书页…'}</span>
+              <span className="reader-dot" aria-hidden="true" />
+              <span>全书 {pct === null ? '—' : `${pct}%`}</span>
+              <SaveStatus status={progress.status} onRetry={() => saverRef.current?.retry()} />
+              {notice && <span className="reader-restore-note" role="status">{notice}</span>}
+            </div>
+            <button type="button" className="reader-turn" onClick={() => void engineRef.current?.next()}
+              disabled={phase !== 'ready' || boundary.atEnd} aria-label="下一页">
+              下一页<ChevronRight size={16} strokeWidth={1.7} aria-hidden="true" />
+            </button>
+          </footer>
+        </div>
+      </article>
 
-    <footer className="reader-footer">
-      <button type="button" onClick={() => void engineRef.current?.previous()} disabled={phase !== 'ready' || boundary.atStart}>上一页</button>
-      <span className="reader-progress">{page.total > 0 ? `第 ${page.page} / ${page.total} 页 · ` : ''}全书 {pct === null ? '—' : `${pct}%`}</span>
-      <button type="button" onClick={() => void engineRef.current?.next()} disabled={phase !== 'ready' || boundary.atEnd}>下一页</button>
-    </footer>
+      <ReaderRail active={panel} onToc={() => togglePanel('contents')}
+        onFavorites={() => { /* M06 */ }} onSettings={() => togglePanel('settings')} />
+
+      {panel !== 'none' && <>
+        <div className="reader-scrim" aria-hidden="true" onClick={closePanel} />
+        {panel === 'contents'
+          ? <ContentsPanel toc={tocTree} spine={manifest?.spine ?? []}
+              currentHref={spineHref} onSelect={href => void goToTocHref(href)} onClose={closePanel} />
+          : draft
+            ? <SettingsPanel draft={draft} state={settingsState}
+                onEdit={next => settingsRef.current?.edit(next)}
+                onRetry={() => settingsRef.current?.retry()}
+                onResolve={keep => settingsRef.current?.resolve(keep)}
+                onClose={closePanel} />
+            : <div className="reader-panel reader-panel-loading" role="dialog" aria-label="阅读设置">
+                <p>正在读取阅读设置…</p>
+                <button type="button" className="reader-choice" onClick={closePanel}>关闭</button>
+              </div>}
+      </>}
+
+      {previewAnchor && <>
+        <span className="reader-word-highlight" aria-hidden="true" style={{
+          left: previewAnchor.left, top: previewAnchor.top,
+          width: previewAnchor.width, height: previewAnchor.height,
+        }} />
+        <DictionaryPreviewCard anchor={previewAnchor} onClose={() => setPreviewAnchor(null)} />
+      </>}
+    </main>
   </div>;
 }

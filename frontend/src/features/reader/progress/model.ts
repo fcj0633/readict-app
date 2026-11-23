@@ -92,7 +92,7 @@ export class ProgressSaver {
       this.lastSentAt = Date.now();
       this.writeLocal(null);
       const dirty = this.latest !== null && this.latest.cfi !== value.anchor.cfi;
-      this.commit({ status: dirty ? 'unsynced' : 'saved', version: value.version, anchor: value.anchor,
+      this.commit({ status: dirty ? 'saving' : 'saved', version: value.version, anchor: value.anchor,
         ratio: value.progressRatio, dirty });
       if (dirty) { clearTimeout(this.timer); this.timer = setTimeout(() => { void this.flush(); }, DEBOUNCE_MS); }
     } catch (error) {
