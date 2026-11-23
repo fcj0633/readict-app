@@ -143,7 +143,7 @@ mvn -Pmysql-it verify
 
 范围：`/reader/:bookId` 阅读页、epub.js 单页分页、CFI＋quote 恢复、进度保存与冲突、V8 `reading_progress`、`GET/PUT /api/v1/books/{id}/progress` 与书架进度联动。M05 取词、M06 收藏、M07 翻译仍未开发。
 
-环境：V8 已在 `readict_test` 执行；**`readict_dev` 未迁移**，需批准后单独执行。前端依赖 `epubjs@0.3.93`（BSD-2-Clause，包自带 TypeScript 类型），执行 `npm ci` 后生效。
+环境：V8 已在 `readict_test` 与 `readict_dev` 执行；dev 于 2026-11-23 经用户批准，首次 1 个、二次启动 0 个迁移，既有词典／音频计数不变。前端依赖 `epubjs@0.3.93`（BSD-2-Clause，包自带 TypeScript 类型），执行 `npm ci` 后生效。
 
 接口：`GET /api/v1/books/{id}/progress` 返回 `{progress:null|...}`；`PUT` body 为 `{expectedVersion,requestId,anchor}`，需 CSRF，成功返回最新进度；409 `PROGRESS_CONFLICT` 附带 `currentVersion` 与 `serverProgress`；422 `ANCHOR_INVALID`；410 `ARTIFACT_REVOKED`。
 
