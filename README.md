@@ -124,7 +124,7 @@ java -jar $readictTool audio-activate --dataset <音频数据集UUID> --expected
 
 范围：私有存储、有界上传、EPUB 解析与清洗、确定性阅读产物与文本索引、导入任务、书架 API 与前端书架页。M04 的阅读器与进度、M05 查词、M06 收藏、M07 翻译、M08 清理巡检、M09 阶段验收仍未开发。
 
-环境：书籍私有根目录用 `READICT_BOOK_STORAGE_ROOT`，末级目录名必须为 `readict_test`／`readict_dev`，未配置时书籍接口返回 503，其他模块不受影响。上传上限 25 MiB；`spring.servlet.multipart` 已在 `application.yml` 设为 26 MB／28 MB 并由业务再校验。V7 已在 `readict_test` 执行；**`readict_dev` 尚未迁移**，需在测试库验收通过后经批准单独执行。
+环境：书籍私有根目录用 `READICT_BOOK_STORAGE_ROOT`，末级目录名必须为 `readict_test`／`readict_dev`，未配置时书籍接口返回 503，其他模块不受影响。上传上限 25 MiB；`spring.servlet.multipart` 已在 `application.yml` 设为 26 MB／28 MB 并由业务再校验。V7 已在 `readict_test` 与 `readict_dev` 执行（开发库于 2026-11-23 经用户批准执行：首次迁移 1 个、二次启动 0 个，既有词典／音频计数不变）。
 
 ```powershell
 # backend/：普通单测与真实 MySQL 集成。集成前加载 test 单一环境凭据并设置私有存储根。
@@ -138,4 +138,4 @@ mvn -Pmysql-it verify
 
 不变量：READY 必须对应已发布且摘要一致的产物；同源文件重复导入复用书籍；跨用户资源一律 404；产物无脚本、无外部引用；同一源文件两次处理 `artifactHash` 一致；删除只置 DELETING 并登记待清理，物理回收留给 M08。
 
-限制与未验收项：前端书架页已用 Edge（headless）完成一次自动截图检查（空态、导入进度、完成态、删除确认、390px 单列，截图见实施记录），人工确认仍建议；A03（无封面/无目录）、A05（条目与总量预算）、A07（DTD/XXE）、A11（崩溃接管）、A12（发布后 DB 失败）已有单测或集成覆盖；真实 EPUB、V03 全量恶意矩阵、`readict_dev` 迁移与 M08 清理执行仍待办，详见设计仓库 [M03 实施记录](../readict-design/validation/implementation/m03/2026-11-23-local/README.md)。`artifactId` 下载不支持 Range；阅读器未接入，书架“打开”按钮为禁用占位。
+限制与未验收项：前端书架页已用 Edge（headless）完成一次自动截图检查（空态、导入进度、完成态、删除确认、390px 单列，截图见实施记录），人工确认仍建议；A03（无封面/无目录）、A05（条目与总量预算）、A07（DTD/XXE）、A11（崩溃接管）、A12（发布后 DB 失败）已有单测或集成覆盖；真实 EPUB、V03 全量恶意矩阵与 M08 清理执行仍待办，详见设计仓库 [M03 实施记录](../readict-design/validation/implementation/m03/2026-11-23-local/README.md)。`artifactId` 下载不支持 Range；阅读器未接入，书架“打开”按钮为禁用占位。
