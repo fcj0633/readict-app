@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import BookCard from './BookCard';
 import { createImport, fetchImport, listBooks, newRequestId, removeBook } from './api';
 import type { Book, ImportTask, Shelf } from './model';
@@ -26,6 +27,7 @@ export default function BookshelfPage() {
   const [task, setTask] = useState<ImportTask | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Book | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const navigate = useNavigate();
   const generation = useRef(0);
   const request = useRef<AbortController | undefined>(undefined);
   const key = useRef<string | null>(null);
@@ -164,7 +166,7 @@ export default function BookshelfPage() {
     </div>}
     {items.length > 0 && <div className="shelf-grid">
       {items.map(book => <BookCard key={book.id} book={book}
-        onOpen={() => setNotice('阅读器尚未接入，将在 M04 开放')}
+        onOpen={() => navigate(`/reader/${book.id}`)}
         onDelete={setDeleteTarget}
         onRetry={() => picker.current?.click()} />)}
     </div>}

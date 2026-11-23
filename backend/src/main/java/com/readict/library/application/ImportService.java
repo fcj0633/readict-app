@@ -13,6 +13,7 @@ import com.readict.library.domain.*;
 import com.readict.library.infrastructure.persistence.entity.*;
 import com.readict.library.infrastructure.persistence.mapper.*;
 import com.readict.library.infrastructure.storage.BookStorage;
+import com.readict.reading.application.ProgressService;
 import com.readict.shared.web.ApiProblem;
 
 /** Upload handling: bounded staging write, idempotency, same-source reuse and task creation. */
@@ -28,15 +29,18 @@ public class ImportService {
     private final ImportSettings settings;
     private final EpubLimits limits;
     private final TransactionTemplate tx;
+    private final ProgressService progress;
 
     public ImportService(BookMapper books, ImportTaskMapper tasks, BookStorage storage,
-                         ImportSettings settings, EpubLimits limits, TransactionTemplate tx) {
+                         ImportSettings settings, EpubLimits limits, TransactionTemplate tx,
+                         ProgressService progress) {
         this.books = books;
         this.tasks = tasks;
         this.storage = storage;
         this.settings = settings;
         this.limits = limits;
         this.tx = tx;
+        this.progress = progress;
     }
 
     public Outcome upload(ReadictPrincipal principal, MultipartFile file, String idempotencyKey) {
@@ -201,6 +205,7 @@ public class ImportService {
                 return new Outcome(bookId, null, true, false, false, false, "DELETING", "PUBLISHING", null, null);
             }
             if (books.markDeleting(bookId, principal.userId(), now) == 1) {
+                progress.deleteForBook(bookId);
                 tasks.markCleanupPending(bookId);
                 return new Outcome(bookId, null, false, true, false, false, "DELETING", "PUBLISHING", null, null);
             }

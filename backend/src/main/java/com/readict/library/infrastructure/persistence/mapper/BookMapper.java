@@ -31,4 +31,6 @@ public interface BookMapper extends BaseMapper<BookEntity> {
                        @Param("author") String author, @Param("now") Instant now);
 
     int markFailedWithoutOpenTask(@Param("now") Instant now);
+
+    int touchRead(@Param("id") UUID id, @Param("userId") UUID userId, @Param("now") Instant now);
 }

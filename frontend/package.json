@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "tsx --test src/lib/*.test.ts src/features/auth/*.test.ts src/features/settings/*.test.ts src/features/library/*.test.ts"
+    "test": "tsx --test src/lib/*.test.ts src/features/auth/*.test.ts src/features/settings/*.test.ts src/features/library/*.test.ts src/features/reader/*.test.ts src/features/reader/engine/*.test.ts src/features/reader/progress/*.test.ts"
   },
   "dependencies": {
+    "epubjs": "0.3.93",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-router-dom": "7.18.5"

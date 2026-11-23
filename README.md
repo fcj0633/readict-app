@@ -139,3 +139,16 @@ mvn -Pmysql-it verify
 不变量：READY 必须对应已发布且摘要一致的产物；同源文件重复导入复用书籍；跨用户资源一律 404；产物无脚本、无外部引用；同一源文件两次处理 `artifactHash` 一致；删除只置 DELETING 并登记待清理，物理回收留给 M08。
 
 限制与未验收项：前端书架页已用 Edge（headless）完成一次自动截图检查（空态、导入进度、完成态、删除确认、390px 单列，截图见实施记录），人工确认仍建议；A03（无封面/无目录）、A05（条目与总量预算）、A07（DTD/XXE）、A11（崩溃接管）、A12（发布后 DB 失败）已有单测或集成覆盖；真实 EPUB、V03 全量恶意矩阵与 M08 清理执行仍待办，详见设计仓库 [M03 实施记录](../readict-design/validation/implementation/m03/2026-11-23-local/README.md)。`artifactId` 下载不支持 Range；阅读器未接入，书架“打开”按钮为禁用占位。
+## M04 本机阅读内核与进度
+
+范围：`/reader/:bookId` 阅读页、epub.js 单页分页、CFI＋quote 恢复、进度保存与冲突、V8 `reading_progress`、`GET/PUT /api/v1/books/{id}/progress` 与书架进度联动。M05 取词、M06 收藏、M07 翻译仍未开发。
+
+环境：V8 已在 `readict_test` 执行；**`readict_dev` 未迁移**，需批准后单独执行。前端依赖 `epubjs@0.3.93`（BSD-2-Clause，包自带 TypeScript 类型），执行 `npm ci` 后生效。
+
+接口：`GET /api/v1/books/{id}/progress` 返回 `{progress:null|...}`；`PUT` body 为 `{expectedVersion,requestId,anchor}`，需 CSRF，成功返回最新进度；409 `PROGRESS_CONFLICT` 附带 `currentVersion` 与 `serverProgress`；422 `ANCHOR_INVALID`；410 `ARTIFACT_REVOKED`。
+
+行为：打开前校验 `artifactHash`（WebCrypto）；恢复顺序为 CFI＋quote 校验 → 同章唯一 quote 回退 → 章节起点并提示，降级不写回旧进度；进度保存 1s 防抖、最小间隔 5s、单标签串行；冲突停止自动覆盖；断网保留本地待同步并在下次打开时补交；删除书时同事务删除进度。
+
+验证：`mvn test` 102 通过；`mvn -Pmysql-it verify` 56 通过（新增 `ReadingProgressIT` 4 项，V8 首次迁移成功、二次启动 0 迁移）；`npm run lint` 0 警告、`npm test` 39 通过、`npm run build` 通过；Edge headless 实跑阅读页（打开、翻页、字号 24、刷新恢复、390px 无横向溢出）见设计仓库 [M04 实施记录](../readict-design/validation/implementation/m04/2026-11-23-local/README.md)。
+
+限制：仅对 Edge/Chromium 给出证据，Firefox/Safari 明确暂不支持；真实大书、跨版式精确恢复、内存／Blob 长期观察未验证；阅读页右栏“收藏”为 M06 前禁用占位；产物下载不支持 Range；阅读页不套用账号页布局。

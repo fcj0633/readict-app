@@ -1,5 +1,6 @@
 package com.readict.library.infrastructure.persistence.entity;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 import com.baomidou.mybatisplus.annotation.*;
@@ -24,6 +25,8 @@ public class BookEntity {
     private Instant createdAt;
     @TableField(typeHandler = UtcInstantTypeHandler.class)
     private Instant updatedAt;
+    @TableField(exist = false)
+    private BigDecimal progressRatio;
 
     public UUID getId() { return id; }
     public void setId(UUID value) { id = value; }
@@ -51,4 +54,6 @@ public class BookEntity {
     public void setCreatedAt(Instant value) { createdAt = value; }
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant value) { updatedAt = value; }
+    public BigDecimal getProgressRatio() { return progressRatio; }
+    public void setProgressRatio(BigDecimal value) { progressRatio = value; }
 }

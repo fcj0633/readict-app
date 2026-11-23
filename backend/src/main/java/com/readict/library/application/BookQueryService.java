@@ -23,7 +23,7 @@ import tools.jackson.databind.node.*;
 @Service
 public class BookQueryService {
     public record BookView(UUID id, String title, String author, String coverUrl, String status,
-                           Double progressRatio, Instant lastReadAt, Instant createdAt) {}
+                           BigDecimal progressRatio, Instant lastReadAt, Instant createdAt) {}
 
     public record ShelfView(List<BookView> items, String nextCursor) {}
 
@@ -196,7 +196,7 @@ public class BookQueryService {
             }
         }
         return new BookView(book.getId(), book.getTitle(), book.getAuthor(), coverUrl, book.getStatus(),
-                null, book.getLastReadAt(), book.getCreatedAt());
+                book.getProgressRatio(), book.getLastReadAt(), book.getCreatedAt());
     }
 
     private List<TocView> toc(BookArtifactEntity artifact) {

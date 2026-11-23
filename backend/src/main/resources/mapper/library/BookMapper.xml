@@ -15,38 +15,40 @@
     <result property="lastReadAt" column="last_read_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
     <result property="createdAt" column="created_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
     <result property="updatedAt" column="updated_at" typeHandler="com.readict.shared.persistence.typehandler.UtcInstantTypeHandler"/>
+    <result property="progressRatio" column="progress_ratio"/>
   </resultMap>
 
-  <sql id="columns">id,user_id,origin_key,source_hash,source_size,title,author,original_filename,status,active_artifact_id,last_read_at,created_at,updated_at</sql>
+  <sql id="columns">book.id,book.user_id,book.origin_key,book.source_hash,book.source_size,book.title,book.author,book.original_filename,book.status,book.active_artifact_id,book.last_read_at,book.created_at,book.updated_at</sql>
 
   <select id="findOwned" resultMap="entity">
-    SELECT <include refid="columns"/> FROM book
+    SELECT <include refid="columns"/>,NULL AS progress_ratio FROM book
      WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
        AND user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
   </select>
 
   <select id="lockOwned" resultMap="entity">
-    SELECT <include refid="columns"/> FROM book
+    SELECT <include refid="columns"/>,NULL AS progress_ratio FROM book
      WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
        AND user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
      FOR UPDATE
   </select>
 
   <select id="findBySource" resultMap="entity">
-    SELECT <include refid="columns"/> FROM book
+    SELECT <include refid="columns"/>,NULL AS progress_ratio FROM book
      WHERE user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
        AND source_hash=#{sourceHash,jdbcType=BINARY}
   </select>
 
   <select id="shelf" resultMap="entity">
-    SELECT <include refid="columns"/> FROM book
-     WHERE user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
-       AND status IN ('IMPORTING','READY','FAILED','BROKEN')
-    <if test="q != null">AND (title LIKE #{q} ESCAPE '!' OR author LIKE #{q} ESCAPE '!')</if>
-    <if test="cursorTime != null">AND (last_read_at &lt; #{cursorTime,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
-         OR (last_read_at = #{cursorTime,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
-         AND id &lt; #{cursorId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}))</if>
-     ORDER BY last_read_at DESC, id DESC
+    SELECT <include refid="columns"/>,p.progress_ratio FROM book
+    LEFT JOIN reading_progress p ON p.book_id=book.id AND p.user_id=book.user_id
+     WHERE book.user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND book.status IN ('IMPORTING','READY','FAILED','BROKEN')
+    <if test="q != null">AND (book.title LIKE #{q} ESCAPE '!' OR book.author LIKE #{q} ESCAPE '!')</if>
+    <if test="cursorTime != null">AND (book.last_read_at &lt; #{cursorTime,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+         OR (book.last_read_at = #{cursorTime,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+         AND book.id &lt; #{cursorId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}))</if>
+     ORDER BY book.last_read_at DESC, book.id DESC
      LIMIT #{limit}
   </select>
 
@@ -88,5 +90,12 @@
            b.updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
      WHERE b.status='IMPORTING'
        AND NOT EXISTS (SELECT 1 FROM import_task t WHERE t.book_id=b.id AND t.state IN ('QUEUED','RUNNING'))
+  </update>
+
+  <update id="touchRead">
+    UPDATE book SET last_read_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler},
+                    updated_at=#{now,jdbcType=TIMESTAMP,typeHandler=com.readict.shared.persistence.typehandler.UtcInstantTypeHandler}
+     WHERE id=#{id,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
+       AND user_id=#{userId,jdbcType=BINARY,typeHandler=com.readict.shared.persistence.typehandler.UuidBinaryTypeHandler}
   </update>
 </mapper>
