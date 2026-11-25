@@ -2,7 +2,7 @@ import ePub from 'epubjs';
 import type { Book, Contents, Location, Rendition } from 'epubjs';
 import { collectBlocks, globalOffsetOf, locate, rangeForGlobal, verifyBlocks, type BlockText } from './blocks';
 import { buildQuote, findQuote, quoteMatches } from './anchor';
-import { wordAt, sentenceAt, quoteParts, type TextSelection, type SelectionRect } from './selection';
+import { wordAt, sentenceAt, sentenceWordRange, quoteParts, type TextSelection, type SelectionRect } from './selection';
 import { themeRules } from './preferences';
 import type {
   ReaderEngine, ReaderEngineOptions, ReaderEvent, ReaderPreferences, ReadingAnchor,
@@ -459,8 +459,7 @@ export class EpubJsEngine implements ReaderEngine {
         sentenceEnd: sentence.end,
         sentence: sentenceText,
         surface,
-        wordStart: word.start,
-        wordEnd: word.end,
+        ...sentenceWordRange(word, sentence),
         wordRangeCfi: wordCfi,
         sentenceRangeCfi: sentenceCfi,
         quote: quoteParts(block.text, sentence.start, sentence.end),

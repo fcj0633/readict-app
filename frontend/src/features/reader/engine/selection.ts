@@ -12,6 +12,7 @@ export interface SelectionSource {
   sentenceEnd: number;
   sentence: string;
   surface: string;
+  /** UTF-16 offsets within sentence; sentenceStart/End remain relative to the block. */
   wordStart: number;
   wordEnd: number;
   wordRangeCfi: string;
@@ -47,6 +48,11 @@ export function wordAt(text: string, offset: number): WordSpan | null {
 }
 
 export interface SentenceRange { start: number; end: number; kind: 'SENTENCE' | 'FRAGMENT' }
+
+/** Lookup word offsets are relative to the selected sentence, unlike indexed block offsets. */
+export function sentenceWordRange(word: WordSpan, sentence: SentenceRange): { wordStart: number; wordEnd: number } {
+  return { wordStart: word.start - sentence.start, wordEnd: word.end - sentence.start };
+}
 
 /** Finds the indexed sentence/fragment that fully contains the token; never invents a browser-side split. */
 export function sentenceAt(sentences: SentenceRange[], wordStart: number, wordEnd: number): SentenceRange | null {

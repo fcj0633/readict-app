@@ -58,6 +58,28 @@ class LookupSourceValidatorTest {
         assertThat(code(() -> validator.validate(artifact, middle))).isEqualTo("SOURCE_INVALID");
     }
 
+    @Test void acceptsSentenceRelativeOffsetsInLaterSentencesAndRejectsBlockRelativeOffsets() {
+        String prefix = "First book. ";
+        String sentence = TEXT;
+        String suffix = " Last word";
+        String text = prefix + sentence + suffix;
+        int start = prefix.length();
+        int end = start + sentence.length();
+        when(indexes.chapter(any(), any())).thenReturn(index(text, start, end));
+        Quote quote = new Quote(sentence, prefix, suffix);
+        SourceContext correct = new SourceContext(artifact.getId(), "OEBPS/Text/ch1.xhtml", "b-1",
+                start, end, sentence, "children", 4, 12,
+                "epubcfi(/6/2!/4/2/1:16)", "epubcfi(/6/2!/4/2/1:12)", quote);
+        SourceView result = validator.validate(artifact, correct);
+        assertThat(result.surface()).isEqualTo("children");
+        assertThat(result.wordStart()).isEqualTo(4);
+        assertThat(result.sentenceStart()).isEqualTo(start);
+        SourceContext oldClient = new SourceContext(artifact.getId(), "OEBPS/Text/ch1.xhtml", "b-1",
+                start, end, sentence, "children", start + 4, start + 12,
+                correct.wordRangeCfi(), correct.sentenceRangeCfi(), quote);
+        assertThat(code(() -> validator.validate(artifact, oldClient))).isEqualTo("SOURCE_INVALID");
+    }
+
     private static String code(Runnable action) {
         try { action.run(); return "NO_FAILURE"; }
         catch (ApiProblem problem) { return problem.code(); }
