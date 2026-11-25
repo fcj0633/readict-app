@@ -1,4 +1,5 @@
 import type { Preferences } from '../../settings/model';
+import type { TextSelection } from './selection';
 
 export interface ManifestSpineItem {
   chapterId: string;
@@ -86,6 +87,7 @@ export type ReaderEvent =
   | { type: 'ready'; spineHref: string }
   | { type: 'relocated'; spineHref: string; cfi: string; atStart: boolean; atEnd: boolean;
       page: number; totalPages: number; anchor: ReadingAnchor | null }
+  | { type: 'selection'; selection: TextSelection | null; error?: 'TEXT_INDEX_MISMATCH' }
   | { type: 'resized' }
   | { type: 'error'; code: ReaderErrorCode; message: string };
 

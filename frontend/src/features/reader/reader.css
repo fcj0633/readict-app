@@ -584,3 +584,26 @@
 @media (prefers-reduced-motion: reduce) {
   .reader-shell *, .reader-shell *::after { transition: none !important; animation: none !important; }
 }
+
+.dictionary-card { width: 390px; }
+.dictionary-inline-ipa { margin-left: 8px; color: var(--muted); font-family: Georgia, "Palatino Linotype", serif; font-size: 12px; }
+.dictionary-loading, .dictionary-error, .dictionary-empty { padding: 14px 18px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+.dictionary-loading { display: flex; align-items: center; gap: 7px; }
+.dictionary-error p, .dictionary-empty p { margin: 0 0 4px; color: var(--ink); }
+.dictionary-error .dictionary-action { margin-top: 8px; }
+.dictionary-empty span { font-size: 11px; }
+.dictionary-spin { animation: dictionary-spin 1s linear infinite; }
+@keyframes dictionary-spin { to { transform: rotate(360deg); } }
+.dictionary-candidates { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 18px 8px; }
+.dictionary-candidate { border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--ink); padding: 5px 10px; font: inherit; font-size: 11px; cursor: pointer; }
+.dictionary-candidate.active { border-color: var(--accent); background: var(--selection); color: var(--accent); }
+.dictionary-sense p { overflow-wrap: anywhere; }
+.dictionary-more { padding: 0 18px; }
+.dictionary-more-button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 11px; padding: 4px 0 8px; cursor: pointer; }
+.dictionary-rotate { transform: rotate(180deg); }
+.dictionary-context mark { background: var(--selection); color: inherit; border-radius: 2px; padding: 0 1px; }
+.dictionary-audio { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 18px 10px; font-size: 11px; color: var(--muted); }
+.dictionary-audio-button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--ink); padding: 5px 9px; font: inherit; font-size: 11px; cursor: pointer; }
+.dictionary-audio-button:hover { border-color: var(--accent); color: var(--accent); }
+.dictionary-audio-button.active { border-color: var(--accent); color: var(--accent); background: var(--selection); }
+.dictionary-lemma { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-size: 10px; color: var(--muted); }

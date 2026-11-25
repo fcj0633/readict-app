@@ -2,6 +2,7 @@ import ePub from 'epubjs';
 import type { Book, Contents, Location, Rendition } from 'epubjs';
 import { collectBlocks, globalOffsetOf, locate, rangeForGlobal, verifyBlocks, type BlockText } from './blocks';
 import { buildQuote, findQuote, quoteMatches } from './anchor';
+import { wordAt, sentenceAt, quoteParts, type TextSelection } from './selection';
 import { themeRules } from './preferences';
 import type {
   ReaderEngine, ReaderEngineOptions, ReaderEvent, ReaderPreferences, ReadingAnchor,
@@ -12,6 +13,22 @@ interface ChapterCache { blocks: BlockText[]; index: TextIndexChapter; verified:
 
 const STABLE_QUIET_MS = 150;
 const STABLE_MAX_MS = 2000;
+
+interface CaretPosition { node: Node; offset: number }
+
+function caretAt(document_: Document, x: number, y: number): CaretPosition | null {
+  const extended = document_ as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  const position = extended.caretPositionFromPoint?.(x, y);
+  if (position) return { node: position.offsetNode, offset: position.offset };
+  const range = extended.caretRangeFromPoint?.(x, y);
+  if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+    return { node: range.startContainer, offset: range.startOffset };
+  }
+  return null;
+}
 
 export class EpubJsEngine implements ReaderEngine {
   private readonly host: HTMLElement;
@@ -34,6 +51,7 @@ export class EpubJsEngine implements ReaderEngine {
   private navigating = false;
   private pendingDirection: 'next' | 'previous' | null = null;
   private keyboardDocuments = new WeakSet<Document>();
+  private selectionDocuments = new WeakSet<Document>();
 
   constructor(options: ReaderEngineOptions) {
     this.host = options.host;
@@ -57,13 +75,17 @@ export class EpubJsEngine implements ReaderEngine {
         width: '100%', height: '100%', allowScriptedContent: false,
       });
       this.rendition = rendition;
-      rendition.hooks.content.register((contents: Contents) => this.attachKeyboard(contents.document));
+      rendition.hooks.content.register((contents: Contents) => {
+        this.attachKeyboard(contents.document);
+        this.attachSelection(contents.document);
+      });
       rendition.on('relocated', (location: Location) => this.onRelocated(location, generation));
       await rendition.display();
       await this.waitStable(generation);
       this.assertSandbox();
       this.applyTheme();
       this.attachKeyboard();
+      this.attachSelection();
       this.attachResize();
       this.emit({ type: 'ready', spineHref: this.currentHref() ?? '' });
     } catch (error) {
@@ -338,6 +360,89 @@ export class EpubJsEngine implements ReaderEngine {
     };
     document_.addEventListener('keydown', handler);
     this.cleanups.push(() => keyboardDocument.removeEventListener('keydown', handler));
+  }
+
+  private attachSelection(document_?: Document): void {
+    const iframe = this.host.querySelector('iframe');
+    document_ ??= iframe?.contentDocument ?? undefined;
+    if (!document_ || this.selectionDocuments.has(document_)) return;
+    this.selectionDocuments.add(document_);
+    const selectionDocument = document_;
+    const handler = (event: MouseEvent) => {
+      if (event.button !== 0 || event.defaultPrevented) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('a,button,input,textarea,select,[role="button"],[contenteditable="true"]')) return;
+      const current = selectionDocument.getSelection();
+      if (current && !current.isCollapsed) return;
+      void this.selectionAt(selectionDocument, event.clientX, event.clientY).then(result => {
+        if (this.disposed) return;
+        if (result && 'error' in result) this.emit({ type: 'selection', selection: null, error: result.error });
+        else if (result) this.emit({ type: 'selection', selection: result });
+      }).catch(() => { /* A click outside a valid block is not a query. */ });
+    };
+    selectionDocument.addEventListener('pointerup', handler);
+    this.cleanups.push(() => selectionDocument.removeEventListener('pointerup', handler));
+  }
+
+  private async selectionAt(document_: Document, clientX: number, clientY: number):
+    Promise<TextSelection | { error: 'TEXT_INDEX_MISMATCH' } | null> {
+    const position = caretAt(document_, clientX, clientY);
+    if (!position || position.node.nodeType !== Node.TEXT_NODE) return null;
+    const href = this.currentHref();
+    const root = this.docRoot();
+    if (!href || !root) return null;
+    const global = globalOffsetOf(root, position.node, position.offset);
+    if (global === null) return null;
+    const chapter = await this.chapterBlocks(href);
+    if (!chapter.verified) return { error: 'TEXT_INDEX_MISMATCH' };
+    const located = locate(chapter.blocks, global);
+    if (!located) return null;
+    const block = chapter.blocks[located.blockIndex]!;
+    const indexBlock = chapter.index.blocks[located.blockIndex]!;
+    const word = wordAt(block.text, located.blockOffset);
+    if (!word) return null;
+    const sentence = sentenceAt(indexBlock.sentences.map(value => ({
+      start: value.start, end: value.end, kind: value.kind as 'SENTENCE' | 'FRAGMENT',
+    })), word.start, word.end);
+    if (!sentence) return null;
+    const wordRange = rangeForGlobal(root, block.globalStart + word.start, block.globalStart + word.end);
+    if (!wordRange) return null;
+    const rect = wordRange.getBoundingClientRect();
+    if (!(clientX >= rect.left - 2 && clientX <= rect.right + 2 && clientY >= rect.top - 2 && clientY <= rect.bottom + 2)) {
+      return null;
+    }
+    const sentenceRange = rangeForGlobal(root, block.globalStart + sentence.start, block.globalStart + sentence.end);
+    const contents = this.contents();
+    const wordCfi = contents?.cfiFromRange(wordRange);
+    const sentenceCfi = sentenceRange ? contents?.cfiFromRange(sentenceRange) : null;
+    if (!wordCfi || !sentenceCfi) return null;
+    const iframe = this.host.querySelector('iframe');
+    if (!iframe) return null;
+    const frame = iframe.getBoundingClientRect();
+    const surface = block.text.slice(word.start, word.end);
+    const sentenceText = block.text.slice(sentence.start, sentence.end);
+    return {
+      contextKind: sentence.kind === 'FRAGMENT' ? 'fragment' : 'sentence',
+      rect: {
+        left: frame.left + rect.left, top: frame.top + rect.top,
+        right: frame.left + rect.right, bottom: frame.top + rect.bottom,
+        width: rect.width, height: rect.height,
+      },
+      source: {
+        artifactId: this.manifest.artifactId,
+        spineHref: href,
+        blockId: indexBlock.blockId,
+        sentenceStart: sentence.start,
+        sentenceEnd: sentence.end,
+        sentence: sentenceText,
+        surface,
+        wordStart: word.start,
+        wordEnd: word.end,
+        wordRangeCfi: wordCfi,
+        sentenceRangeCfi: sentenceCfi,
+        quote: quoteParts(block.text, sentence.start, sentence.end),
+      },
+    };
   }
 
   private attachResize(): void {

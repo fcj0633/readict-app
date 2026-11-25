@@ -45,6 +45,7 @@ public class SecurityConfiguration {
                         "/api/v1/books/*/cover","/api/v1/books/*/reader-manifest","/api/v1/books/*/progress",
                         "/api/v1/books/*/artifacts/*/epub","/api/v1/books/*/artifacts/*/text-index").authenticated()
                 .requestMatchers(HttpMethod.POST,"/api/v1/books/imports").authenticated()
+                .requestMatchers(HttpMethod.POST,"/api/v1/dictionary/lookups").authenticated()
                 .requestMatchers(HttpMethod.PUT,"/api/v1/books/*/progress").authenticated()
                 .requestMatchers(HttpMethod.DELETE,"/api/v1/books/*").authenticated()
                 .requestMatchers(HttpMethod.PUT,"/api/v1/auth/password","/api/v1/me/settings").authenticated()

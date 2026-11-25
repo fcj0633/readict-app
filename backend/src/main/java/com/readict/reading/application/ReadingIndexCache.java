@@ -30,7 +30,7 @@ public class ReadingIndexCache {
         this.json = json;
     }
 
-    public JsonNode chapter(BookArtifactEntity artifact, String spineHref) {
+    public synchronized JsonNode chapter(BookArtifactEntity artifact, String spineHref) {
         JsonNode index = cache.get(artifact.getId());
         if (index == null) {
             Path path = storage.resolve(artifact.getIndexStorageKey());

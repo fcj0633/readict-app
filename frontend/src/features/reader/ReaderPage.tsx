@@ -14,9 +14,11 @@ import type {
 import { ProgressSaver, type ProgressState } from './progress/model';
 import { ContentsPanel, SettingsPanel } from './ReaderPanels';
 import { ReaderPaperHeading, ReaderRail, ReaderTopbar, SaveStatus, type ReaderPanelName } from './ReaderLayout';
-import { findWordRect, type AnchorRect } from './preview/position';
-import { previewEntry } from './preview/fixture';
-import { DictionaryPreviewCard } from './preview/DictionaryPreviewCard';
+import type { TextSelection } from './engine/selection';
+import { lookupWord } from '../dictionary/api';
+import type { LookupViewState } from '../dictionary/model';
+import { DictionaryCard } from '../dictionary/DictionaryCard';
+import { PronunciationPlayer, type PlaybackState } from '../dictionary/PronunciationPlayer';
 import { findTocLabel, groupToc, sameChapter } from './toc';
 import './reader.css';
 
@@ -69,10 +71,13 @@ export default function ReaderPage() {
   const [progress, setProgress] = useState<ProgressState>(EMPTY_PROGRESS);
   const [settingsState, setSettingsState] = useState<SaveState>({ status: 'loading' });
   const [reloadToken, setReloadToken] = useState(0);
-  const [previewAnchor, setPreviewAnchor] = useState<AnchorRect | null>(null);
-
-  const dictionaryPreviewEnabled = import.meta.env.DEV
-    && new URLSearchParams(window.location.search).get('preview') === 'dictionary';
+  const [lookup, setLookup] = useState<{ selection: TextSelection; state: LookupViewState } | null>(null);
+  const [activeRegion, setActiveRegion] = useState(0);
+  const [playback, setPlayback] = useState<PlaybackState>({ audioId: null, status: 'idle' });
+  const lookupIdRef = useRef(0);
+  const lookupAbortRef = useRef<AbortController | null>(null);
+  const lookupOpenRef = useRef(false);
+  const playerRef = useRef<PronunciationPlayer | null>(null);
 
   const enterPhase = useCallback((value: ReaderPhase) => { phaseRef.current = value; setPhase(value); }, []);
   const syncDisplayedPage = useCallback((engine: EpubJsEngine) => {
@@ -98,7 +103,8 @@ export default function ReaderPage() {
     let preferenceSaver: PreferenceSaver | null = null;
     enterPhase('loading');
     setError(null); setNotice(null); setManifest(null); setProgress(EMPTY_PROGRESS);
-    setPanel('none'); setPreviewAnchor(null); setSpineHref(null);
+    setPanel('none'); setSpineHref(null);
+    closeLookup();
 
     void (async () => {
       try {
@@ -122,9 +128,9 @@ export default function ReaderPage() {
           host, manifest: loaded, preferences,
           loadIndex: (href: string) => loadChapterIndex(loaded, href, controller.signal),
           onKey: key => {
-            if (key === 'next') void engineRef.current?.next();
-            else if (key === 'previous') void engineRef.current?.previous();
-            else if (key === 'escape') { setPreviewAnchor(null); setPanel('none'); }
+            if (key === 'next' && !lookupOpenRef.current) void engineRef.current?.next();
+            else if (key === 'previous' && !lookupOpenRef.current) void engineRef.current?.previous();
+            else if (key === 'escape') { closeLookup(); setPanel('none'); }
           },
         });
         engineRef.current = engine;
@@ -133,15 +139,21 @@ export default function ReaderPage() {
             setPage({ page: event.page, total: event.totalPages });
             setBoundary({ atStart: event.atStart, atEnd: event.atEnd });
             setSpineHref(event.spineHref || null);
-            setPreviewAnchor(null);
+            closeLookup();
             if (phaseRef.current === 'ready' && event.anchor && event.anchor.cfi !== lastAnchor.current
                 && Date.now() - readyAt.current > 800) {
               lastAnchor.current = event.anchor.cfi;
               saverRef.current?.update(event.anchor);
             }
+          } else if (event.type === 'selection') {
+            if (event.selection) startLookup(event.selection);
+            else if (event.error) {
+              closeLookup();
+              setNotice('当前位置无法精确查词，请翻页后重试');
+            }
           } else if (event.type === 'resized') {
             if (engine) syncDisplayedPage(engine);
-            setPreviewAnchor(null);
+            closeLookup();
           } else if (event.type === 'error') {
             setError({ code: event.code, message: event.message });
           }
@@ -174,7 +186,6 @@ export default function ReaderPage() {
         preferenceSaver = new PreferenceSaver(setSettingsState, settingsApi);
         settingsRef.current = preferenceSaver;
         void preferenceSaver.load();
-        if (dictionaryPreviewEnabled) window.setTimeout(openDictionaryPreview, 400);
       } catch (caught) {
         if (controller.signal.aborted) return;
         const code = caught instanceof ApiError ? caught.code : 'ENGINE_INIT_FAILED';
@@ -203,6 +214,7 @@ export default function ReaderPage() {
     const key = JSON.stringify(next);
     if (key === appliedPrefs.current) return;
     appliedPrefs.current = key;
+    closeLookup();
     void (async () => {
       const anchor = engine.anchor();
       await engine.applyPreferences(next);
@@ -217,48 +229,79 @@ export default function ReaderPage() {
     return () => { window.removeEventListener('pagehide', flush); flush(); };
   }, []);
 
+  useEffect(() => () => { playerRef.current?.dispose(); }, []);
+
   useEffect(() => {
-    const close = () => setPreviewAnchor(null);
+    const close = () => closeLookup();
     window.addEventListener('resize', close);
     return () => window.removeEventListener('resize', close);
   }, []);
 
+  function getPlayer(): PronunciationPlayer {
+    if (!playerRef.current) playerRef.current = new PronunciationPlayer(setPlayback);
+    return playerRef.current;
+  }
+
+  function closeLookup() {
+    lookupAbortRef.current?.abort();
+    lookupAbortRef.current = null;
+    lookupIdRef.current++;
+    lookupOpenRef.current = false;
+    playerRef.current?.stop();
+    setLookup(null);
+    setActiveRegion(0);
+  }
+
+  function startLookup(selection: TextSelection) {
+    const id = ++lookupIdRef.current;
+    lookupAbortRef.current?.abort();
+    const controller = new AbortController();
+    lookupAbortRef.current = controller;
+    lookupOpenRef.current = true;
+    playerRef.current?.stop();
+    setActiveRegion(0);
+    setLookup({ selection, state: { phase: 'loading' } });
+    void lookupWord({ bookId, source: selection.source }, controller.signal).then(data => {
+      if (controller.signal.aborted || id !== lookupIdRef.current) return;
+      setLookup({ selection, state: { phase: 'ready', data } });
+    }).catch(caught => {
+      if (controller.signal.aborted || id !== lookupIdRef.current) return;
+      const error = caught instanceof ApiError ? caught : null;
+      setLookup({
+        selection,
+        state: {
+          phase: 'error',
+          code: error?.code ?? 'NETWORK_ERROR',
+          message: error?.message ?? '查词暂时不可用，请稍后重试。',
+          retryable: error?.retryable ?? true,
+        },
+      });
+    });
+  }
+
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (previewAnchor) { setPreviewAnchor(null); return; }
+        if (lookupOpenRef.current) { closeLookup(); return; }
         if (panel !== 'none') setPanel('none');
         return;
       }
       if (phaseRef.current !== 'ready') return;
       const target = event.target as HTMLElement | null;
       if (target && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(target.tagName))) return;
-      if (panel !== 'none' || previewAnchor) return;
+      if (panel !== 'none' || lookupOpenRef.current) return;
       if (event.key === 'ArrowRight') { event.preventDefault(); void engineRef.current?.next(); }
       else if (event.key === 'ArrowLeft') { event.preventDefault(); void engineRef.current?.previous(); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [panel, previewAnchor]);
+  }, [panel]);
 
-  function openDictionaryPreview() {
-    const iframe = hostRef.current?.querySelector('iframe');
-    const document_ = iframe?.contentDocument;
-    if (!iframe || !document_?.body) return;
-    const rect = findWordRect(document_, previewEntry.word);
-    if (!rect) return;
-    const frame = iframe.getBoundingClientRect();
-    setPreviewAnchor({
-      left: frame.left + rect.left, top: frame.top + rect.top,
-      right: frame.left + rect.right, bottom: frame.top + rect.bottom,
-      width: rect.width, height: rect.height,
-    });
-  }
 
-  const leave = async () => { await saverRef.current?.flush(); navigate('/books'); };
+  const leave = async () => { closeLookup(); await saverRef.current?.flush(); navigate('/books'); };
 
   function togglePanel(next: Exclude<ReaderPanelName, 'none'>) {
-    setPreviewAnchor(null);
+    closeLookup();
     setPanel(current => current === next ? 'none' : next);
   }
 
@@ -269,7 +312,7 @@ export default function ReaderPage() {
     const target = manifest.spine.find(item => sameChapter(item.href, href));
     const nextHref = target?.href ?? href.split('#')[0] ?? href;
     setPanel('none');
-    setPreviewAnchor(null);
+    closeLookup();
     setSpineHref(nextHref);
     await engineRef.current.display({
       artifactId: manifest.artifactId, artifactHash: manifest.artifactHash,
@@ -366,12 +409,17 @@ export default function ReaderPage() {
               </div>}
       </>}
 
-      {previewAnchor && <>
+      {lookup && <>
         <span className="reader-word-highlight" aria-hidden="true" style={{
-          left: previewAnchor.left, top: previewAnchor.top,
-          width: previewAnchor.width, height: previewAnchor.height,
+          left: lookup.selection.rect.left, top: lookup.selection.rect.top,
+          width: lookup.selection.rect.width, height: lookup.selection.rect.height,
         }} />
-        <DictionaryPreviewCard anchor={previewAnchor} onClose={() => setPreviewAnchor(null)} />
+        <DictionaryCard selection={lookup.selection} state={lookup.state}
+          activeRegion={activeRegion} playback={playback}
+          onRegion={index => { setActiveRegion(index); playerRef.current?.stop(); }}
+          onRetry={() => startLookup(lookup.selection)}
+          onPlay={audioId => getPlayer().play(audioId)}
+          onClose={closeLookup} />
       </>}
     </main>
   </div>;
