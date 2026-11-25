@@ -1,21 +1,29 @@
-import { ArrowLeft, Bookmark, List, Settings2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Bookmark, List, Settings2 } from 'lucide-react';
 import type { ProgressStatus } from './progress/model';
 
 export type ReaderPanelName = 'none' | 'contents' | 'settings';
 
-export function ReaderTopbar({ title, chapter, onBack }: {
-  title: string; chapter?: string; onBack: () => void;
+export function ReaderTopbar({ onBack }: {
+  onBack: () => void;
 }) {
   return <header className="reader-topbar">
+    <span className="reader-brand"><BookOpen size={25} strokeWidth={1.4} aria-hidden="true" />Readict</span>
+    <span className="reader-brand-divider" aria-hidden="true" />
     <button type="button" className="reader-back" onClick={onBack} aria-label="返回书架">
       <ArrowLeft size={16} strokeWidth={1.7} aria-hidden="true" />
       <span>书架</span>
     </button>
-    <div className="reader-title">
-      <h1 title={title}>{title}</h1>
-      {chapter && <p title={chapter}>{chapter}</p>}
+  </header>;
+}
+
+export function ReaderPaperHeading({ title, chapter }: { title: string; chapter?: string }) {
+  return <header className="reader-paper-heading">
+    <h1 title={title}>{title}</h1>
+    <div className="reader-chapter">
+      <span aria-hidden="true" />
+      <p title={chapter}>{chapter || '正在展开书页…'}</p>
+      <span aria-hidden="true" />
     </div>
-    <span aria-hidden="true" />
   </header>;
 }
 

@@ -33,6 +33,7 @@ export class EpubJsEngine implements ReaderEngine {
   private stableTimer: number | undefined;
   private navigating = false;
   private pendingDirection: 'next' | 'previous' | null = null;
+  private keyboardDocuments = new WeakSet<Document>();
 
   constructor(options: ReaderEngineOptions) {
     this.host = options.host;
@@ -56,6 +57,7 @@ export class EpubJsEngine implements ReaderEngine {
         width: '100%', height: '100%', allowScriptedContent: false,
       });
       this.rendition = rendition;
+      rendition.hooks.content.register((contents: Contents) => this.attachKeyboard(contents.document));
       rendition.on('relocated', (location: Location) => this.onRelocated(location, generation));
       await rendition.display();
       await this.waitStable(generation);
@@ -83,13 +85,17 @@ export class EpubJsEngine implements ReaderEngine {
         && anchor.pipelineVersion === this.manifest.pipelineVersion;
       if (!identity) {
         await this.goToSpine(anchor.spineHref, generation);
+        if (this.lastLocation) this.lastAnchorValue = await this.buildAnchor(this.lastLocation);
         return 'chapter-start';
       }
       if (anchor.cfi.length > 0 && anchor.cfi.length <= 4096) {
         try {
           await rendition.display(anchor.cfi);
           await this.waitStable(generation);
-          if (await this.contentMatches(anchor)) return 'restored';
+          if (await this.contentMatches(anchor)) {
+            this.lastAnchorValue = { ...anchor };
+            return 'restored';
+          }
         } catch { /* fall through to text matching */ }
       }
       await this.goToSpine(anchor.spineHref, generation);
@@ -104,10 +110,12 @@ export class EpubJsEngine implements ReaderEngine {
           if (cfi) {
             await rendition.display(cfi);
             await this.waitStable(generation);
+            this.lastAnchorValue = { ...anchor, cfi };
             return 'quote-fallback';
           }
         }
       }
+      if (this.lastLocation) this.lastAnchorValue = await this.buildAnchor(this.lastLocation);
       return 'chapter-start';
     } finally {
       this.suppress = Math.max(0, this.suppress - 1);
@@ -316,10 +324,12 @@ export class EpubJsEngine implements ReaderEngine {
     if (sandbox.length === 0 || /allow-scripts/i.test(sandbox)) throw new Error('IFRAME_UNSAFE');
   }
 
-  private attachKeyboard(): void {
+  private attachKeyboard(document_?: Document): void {
     const iframe = this.host.querySelector('iframe');
-    const document_ = iframe?.contentDocument;
-    if (!document_) return;
+    document_ ??= iframe?.contentDocument ?? undefined;
+    if (!document_ || this.keyboardDocuments.has(document_)) return;
+    this.keyboardDocuments.add(document_);
+    const keyboardDocument = document_;
     const handler = (event: KeyboardEvent) => {
       if (event.key === 'ArrowRight') { event.preventDefault(); this.onKey?.('next'); }
       else if (event.key === 'ArrowLeft') { event.preventDefault(); this.onKey?.('previous'); }
@@ -327,17 +337,52 @@ export class EpubJsEngine implements ReaderEngine {
       else this.onKey?.('other');
     };
     document_.addEventListener('keydown', handler);
-    this.cleanups.push(() => document_.removeEventListener('keydown', handler));
+    this.cleanups.push(() => keyboardDocument.removeEventListener('keydown', handler));
   }
 
   private attachResize(): void {
+    let frame = 0;
+    let previousWidth = 0;
+    let previousHeight = 0;
+    let pendingAnchor: ReadingAnchor | null = null;
     const handler = () => {
-      const rendition = this.rendition as unknown as { resize?: () => void } | null;
-      try { rendition?.resize?.(); } catch { /* engine keeps old size */ }
-      this.emit({ type: 'resized' });
+      pendingAnchor ??= this.lastAnchorValue;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (this.disposed || !this.rendition) return;
+        const width = this.host.clientWidth;
+        const height = this.host.clientHeight;
+        if (!width || !height || (width === previousWidth && height === previousHeight)) {
+          pendingAnchor = null;
+          return;
+        }
+        previousWidth = width;
+        previousHeight = height;
+        const anchor = pendingAnchor;
+        pendingAnchor = null;
+        // epub.js 0.3.93 supports this CFI argument; its bundled type omits it.
+        const resize = this.rendition.resize.bind(this.rendition) as
+          (width: number, height: number, cfi?: string) => void;
+        resize(width, height, anchor?.cfi);
+        if (anchor) {
+          // Native CFI relocation alone can drift after reflow; reuse verified quote recovery.
+          void this.display(anchor).then(() => {
+            if (!this.disposed) this.emit({ type: 'resized' });
+          }).catch(() => {
+            if (!this.disposed) console.warn('reader-resize-restore-failed');
+          });
+        }
+        this.emit({ type: 'resized' });
+      });
     };
+    const observer = new ResizeObserver(handler);
+    observer.observe(this.host);
     window.addEventListener('resize', handler);
-    this.cleanups.push(() => window.removeEventListener('resize', handler));
+    this.cleanups.push(() => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', handler);
+    });
   }
 
   private currentHref(): string | null {

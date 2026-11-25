@@ -1,5 +1,7 @@
 # Readict 应用工程
 
+阅读器视觉改版 UX-R01：保留真实 EPUB.js／CFI／进度协议，改造纸面标题、正文比例、工具栏与分页。说明及实际验证见设计仓库的 [UX-R01 执行说明](../readict-design/docs/technical/implementation/UX-R01-正式阅读器视觉改版执行说明.md) 和 [独立验证报告](../readict-design/validation/implementation/ux-r01/2026-11-25/README.md)。正常启动与测试命令不变；本轮因其他项目占用端口，临时预览使用5174／8081，配置和单次脚本未加入工程。
+
 正式应用源码仓库。M00 已完成本机阶段验收，包含 Java 后端、React 状态页、MySQL 隔离、Flyway、MyBatis-Plus／XML、统一错误和健康检查。M01 核心账号及本地模拟验证已实现并通过本机阶段验收；真实短信／邮件通道待接入，其他业务模块尚未开发。
 
 设计与详细记录统一放在平级设计仓库：[系统设计](../readict-design/docs/technical/architecture/Readict-V1.1-系统技术设计.md)、[M00 执行指导](../readict-design/docs/technical/implementation/M00-工程基础与本机环境执行文档.md)、[M00 验收记录](../readict-design/validation/implementation/m00/README.md)。M01 见 [执行指导](../readict-design/docs/technical/implementation/M01-用户认证与个人设置执行文档.md) 和 [验收记录](../readict-design/validation/implementation/m01/README.md)。这些文档不参与应用运行。

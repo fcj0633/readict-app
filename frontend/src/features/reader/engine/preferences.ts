@@ -28,7 +28,7 @@ export function themeRules(preferences: ReaderPreferences): Record<string, Recor
       'overflow-wrap': 'break-word',
       'text-rendering': 'optimizeLegibility',
     },
-    'p': { margin: '0 0 1em 0', 'text-indent': '0' },
+    'p': { margin: '0 0 0.65em 0' },
     'h1, h2, h3, h4, h5, h6': {
       'font-family': family,
       'font-weight': '600',

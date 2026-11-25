@@ -13,7 +13,7 @@ import type {
 } from './engine/types';
 import { ProgressSaver, type ProgressState } from './progress/model';
 import { ContentsPanel, SettingsPanel } from './ReaderPanels';
-import { ReaderRail, ReaderTopbar, SaveStatus, type ReaderPanelName } from './ReaderLayout';
+import { ReaderPaperHeading, ReaderRail, ReaderTopbar, SaveStatus, type ReaderPanelName } from './ReaderLayout';
 import { findWordRect, type AnchorRect } from './preview/position';
 import { previewEntry } from './preview/fixture';
 import { DictionaryPreviewCard } from './preview/DictionaryPreviewCard';
@@ -75,6 +75,13 @@ export default function ReaderPage() {
     && new URLSearchParams(window.location.search).get('preview') === 'dictionary';
 
   const enterPhase = useCallback((value: ReaderPhase) => { phaseRef.current = value; setPhase(value); }, []);
+  const syncDisplayedPage = useCallback((engine: EpubJsEngine) => {
+    if (engineRef.current !== engine) return;
+    const info = engine.pageInfo();
+    if (!info) return;
+    setPage({ page: info.page, total: info.total });
+    setBoundary({ atStart: info.atStart, atEnd: info.atEnd });
+  }, []);
 
   useEffect(() => {
     if (!notice) return;
@@ -132,6 +139,9 @@ export default function ReaderPage() {
               lastAnchor.current = event.anchor.cfi;
               saverRef.current?.update(event.anchor);
             }
+          } else if (event.type === 'resized') {
+            if (engine) syncDisplayedPage(engine);
+            setPreviewAnchor(null);
           } else if (event.type === 'error') {
             setError({ code: event.code, message: event.message });
           }
@@ -183,7 +193,7 @@ export default function ReaderPage() {
       void engine?.destroy();
       enterPhase('idle');
     };
-  }, [bookId, auth.user?.id, reloadToken, enterPhase]);
+  }, [bookId, auth.user?.id, reloadToken, enterPhase, syncDisplayedPage]);
 
   useEffect(() => {
     const draft = settingsState.draft;
@@ -197,8 +207,9 @@ export default function ReaderPage() {
       const anchor = engine.anchor();
       await engine.applyPreferences(next);
       if (anchor) await engine.display(anchor);
+      syncDisplayedPage(engine);
     })();
-  }, [settingsState.draft]);
+  }, [settingsState.draft, syncDisplayedPage]);
 
   useEffect(() => {
     const flush = () => { void saverRef.current?.flush(); };
@@ -264,17 +275,21 @@ export default function ReaderPage() {
       artifactId: manifest.artifactId, artifactHash: manifest.artifactHash,
       pipelineVersion: manifest.pipelineVersion, spineHref: nextHref, cfi: '',
     });
+    if (engineRef.current) syncDisplayedPage(engineRef.current);
   }
 
   async function adoptServerPosition() {
     const server = progress.conflict?.serverProgress;
     saverRef.current?.resolveServer();
-    if (server?.anchor) await engineRef.current?.display(server.anchor);
+    if (server?.anchor && engineRef.current) {
+      await engineRef.current.display(server.anchor);
+      if (engineRef.current) syncDisplayedPage(engineRef.current);
+    }
   }
 
   const draft = settingsState.draft;
   const theme = draft?.theme ?? manifest?.settings.theme ?? 'warm';
-  const readingWidth = draft?.width === 720 ? 'wide' : 'standard';
+  const readingWidth = (draft?.width ?? manifest?.settings.width) === 720 ? 'wide' : 'standard';
   const tocTree = useMemo(() => groupToc(manifest?.toc ?? []), [manifest?.toc]);
   const chapterLabel = spineHref
     ? findTocLabel(tocTree, spineHref) ?? manifest?.spine.find(item => item.href === spineHref)?.title
@@ -282,7 +297,7 @@ export default function ReaderPage() {
 
   if (phase === 'error') {
     return <div className="reader-shell" data-theme={theme}>
-      <ReaderTopbar title={title} onBack={() => void leave()} />
+      <ReaderTopbar onBack={() => void leave()} />
       <main className="reader-stage"><div className="reader-error">
         <p className="reader-error-kicker">阅读器</p>
         <h2>这本书暂时无法打开</h2>
@@ -298,11 +313,14 @@ export default function ReaderPage() {
 
   return <div className="reader-shell" data-theme={theme} data-panel={panel === 'none' ? 'closed' : 'open'}
     data-reading-width={readingWidth}>
-    <ReaderTopbar title={title} chapter={chapterLabel} onBack={() => void leave()} />
+    <ReaderTopbar onBack={() => void leave()} />
 
     <main className="reader-stage">
       <article className="reader-paper">
         <div className="reader-paper-inner">
+          <ReaderPaperHeading title={title} chapter={chapterLabel} />
+          <ReaderRail active={panel} onToc={() => togglePanel('contents')}
+            onFavorites={() => { /* M06 */ }} onSettings={() => togglePanel('settings')} />
           <div ref={hostRef} className="reader-canvas" data-phase={phase} />
           {progress.status === 'conflict' && <div className="reader-conflict" role="alert">
             <p>阅读位置已在其他窗口更新。</p>
@@ -317,9 +335,11 @@ export default function ReaderPage() {
               <ChevronLeft size={16} strokeWidth={1.7} aria-hidden="true" />上一页
             </button>
             <div className="reader-meta">
-              <span>{page.total > 0 ? `第 ${page.page} / ${page.total} 页` : '展开书页…'}</span>
-              <SaveStatus status={progress.status} onRetry={() => saverRef.current?.retry()} />
-              {notice && <span className="reader-restore-note" role="status">{notice}</span>}
+              <span className="reader-page-number">{page.total > 0 ? `第 ${page.page} / ${page.total} 页` : '展开书页…'}</span>
+              <div className="reader-status-line">
+                <SaveStatus status={progress.status} onRetry={() => saverRef.current?.retry()} />
+                {notice && <span className="reader-restore-note" role="status">{notice}</span>}
+              </div>
             </div>
             <button type="button" className="reader-turn" onClick={() => void engineRef.current?.next()}
               disabled={phase !== 'ready' || boundary.atEnd} aria-label="下一页">
@@ -328,9 +348,6 @@ export default function ReaderPage() {
           </footer>
         </div>
       </article>
-
-      <ReaderRail active={panel} onToc={() => togglePanel('contents')}
-        onFavorites={() => { /* M06 */ }} onSettings={() => togglePanel('settings')} />
 
       {panel !== 'none' && <>
         <div className="reader-scrim" aria-hidden="true" onClick={closePanel} />
