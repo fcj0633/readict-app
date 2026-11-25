@@ -40,6 +40,7 @@ import com.readict.support.TestDatabaseInitializer;
         "readict.auth.rate-hmac-key=library-recovery-rate-secret-0000000000000000",
         "readict.verification.hmac-key=library-recovery-code-secret-0000000000000000",
         "readict.library.import.timeout-seconds=30"})
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 @ContextConfiguration(initializers = TestDatabaseInitializer.class)
 class LibraryRecoveryIT {
     private static final Path STORAGE = createStorage();

@@ -2,7 +2,7 @@ import ePub from 'epubjs';
 import type { Book, Contents, Location, Rendition } from 'epubjs';
 import { collectBlocks, globalOffsetOf, locate, rangeForGlobal, verifyBlocks, type BlockText } from './blocks';
 import { buildQuote, findQuote, quoteMatches } from './anchor';
-import { wordAt, sentenceAt, quoteParts, type TextSelection } from './selection';
+import { wordAt, sentenceAt, quoteParts, type TextSelection, type SelectionRect } from './selection';
 import { themeRules } from './preferences';
 import type {
   ReaderEngine, ReaderEngineOptions, ReaderEvent, ReaderPreferences, ReadingAnchor,
@@ -142,6 +142,29 @@ export class EpubJsEngine implements ReaderEngine {
     } finally {
       this.suppress = Math.max(0, this.suppress - 1);
     }
+  }
+
+  /** Resolve the saved target from verified indexed text, without wrapping EPUB nodes. */
+  async favoriteSelection(anchor: ReadingAnchor, wordStart: number, wordEnd: number): Promise<SelectionRect | null> {
+    if (this.disposed || anchor.artifactId !== this.manifest.artifactId
+      || anchor.artifactHash !== this.manifest.artifactHash || anchor.pipelineVersion !== this.manifest.pipelineVersion
+      || this.currentSpine()?.href !== anchor.spineHref || !anchor.quote || anchor.blockOffset === undefined
+      || !Number.isSafeInteger(wordStart) || !Number.isSafeInteger(wordEnd) || wordStart < 0 || wordEnd <= wordStart
+      || wordEnd > anchor.quote.exact.length) return null;
+    const chapter = await this.chapterBlocks(anchor.spineHref);
+    const blockIndex = chapter.index.blocks.findIndex(b => b.blockId === anchor.blockId);
+    const block = chapter.blocks[blockIndex];
+    const root = this.docRoot();
+    if (!chapter.verified || !block || !root || !quoteMatches(block.text, anchor.blockOffset, anchor.quote)) return null;
+    const range = rangeForGlobal(root, block.globalStart + anchor.blockOffset + wordStart,
+      block.globalStart + anchor.blockOffset + wordEnd);
+    const iframe = this.host.querySelector('iframe');
+    if (!range || !iframe || range.toString() !== anchor.quote.exact.slice(wordStart, wordEnd)) return null;
+    const rect = range.getBoundingClientRect(), frame = iframe.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0 || rect.right <= 0 || rect.left >= frame.width
+      || rect.bottom <= 0 || rect.top >= frame.height) return null;
+    return { left: frame.left + rect.left, top: frame.top + rect.top,
+      right: frame.left + rect.right, bottom: frame.top + rect.bottom, width: rect.width, height: rect.height };
   }
 
   async next(): Promise<void> { await this.navigate('next'); }

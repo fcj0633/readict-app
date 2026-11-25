@@ -27,7 +27,7 @@ public class ApiExceptionHandler {
     }
 
     private ResponseEntity<ProblemDetail> problem(HttpServletRequest request,int status,String code,String title,int retryAfter) {
-        var builder=ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON);
+        var builder=ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON).cacheControl(CacheControl.noStore());
         if(retryAfter>0) builder.header("Retry-After",Integer.toString(retryAfter));
         return builder.body(Problems.create(request,status,code,title,status>=500 || status==429));
     }
@@ -63,7 +63,7 @@ public class ApiExceptionHandler {
         return response(request, 500, "INTERNAL_ERROR", "服务暂时不可用", true);
     }
     private ResponseEntity<ProblemDetail> response(HttpServletRequest request, int status, String code, String title, boolean retryable) {
-        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON).cacheControl(CacheControl.noStore())
                 .body(Problems.create(request, status, code, title, retryable));
     }
 }

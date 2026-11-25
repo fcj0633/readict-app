@@ -5,3 +5,9 @@ spring:
       maximum-pool-size: 3
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml,classpath*:/mapper-test/**/*.xml
+
+# Integration contexts opt in with their own private fixture root.
+# Do not let a locally exported root start another queue consumer.
+readict:
+  library:
+    storage-root: ""

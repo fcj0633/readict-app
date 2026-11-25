@@ -23,6 +23,7 @@ public class Problems {
     }
     public void write(HttpServletRequest request, HttpServletResponse response, int status, String code, String title) throws IOException {
         response.setStatus(status);
+        response.setHeader("Cache-Control", "no-store");
         response.setContentType("application/problem+json");
         response.setCharacterEncoding("UTF-8");
         objectMapper.writeValue(response.getOutputStream(), create(request, status, code, title, status >= 500));

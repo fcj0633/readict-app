@@ -8,7 +8,7 @@ import com.readict.lexical.api.DictionaryLookupDtos.*;
 import com.readict.shared.web.ApiProblem;
 
 /**
- * Process-local short-lived lookup receipts. The MVP does not persist snapshots; M06 must
+ * Process-local short-lived lookup receipts. Snapshots are limited to first meanings for favorites; consumers must
  * revalidate the account, book, artifact and rights before using a receipt.
  */
 @Component
@@ -22,17 +22,26 @@ public class LookupReceiptStore {
 
     public record Receipt(UUID id, UUID userId, UUID bookId, UUID artifactId, String status,
                           DatasetView dataset, SourceView source, List<String> entryIds,
-                          List<String> senseIds, Instant expiresAt) {}
+                          List<String> senseIds, Instant expiresAt, List<FavoriteDraft> favorites) {}
+
+    public record FavoriteDraft(String senseId, String entryKey, String senseKey, String lemma, String lemmaKey,
+                                String lemmaMethod, String ipa, String pos, String meaning) {}
 
     public LookupReceiptStore(Clock clock) { this.clock = clock; }
 
     public synchronized Receipt create(UUID userId, UUID bookId, SourceView source, String status,
                                        DatasetView dataset, List<String> entryIds, List<String> senseIds) {
+        return create(userId, bookId, source, status, dataset, entryIds, senseIds, List.of());
+    }
+
+    public synchronized Receipt create(UUID userId, UUID bookId, SourceView source, String status,
+                                       DatasetView dataset, List<String> entryIds, List<String> senseIds,
+                                       List<FavoriteDraft> favorites) {
         Instant now = clock.instant();
         Instant expiresAt = now.plusSeconds(600);
         UUID id = UUID.randomUUID();
         Receipt receipt = new Receipt(id, userId, bookId, source.artifactId(), status, dataset, source,
-                List.copyOf(entryIds), List.copyOf(senseIds), expiresAt);
+                List.copyOf(entryIds), List.copyOf(senseIds), expiresAt, List.copyOf(favorites));
         long size = estimate(receipt);
         if (size > MAX_ITEM_BYTES) throw new ApiProblem(503, "LOOKUP_CAPACITY_EXCEEDED", "查询结果过大，请稍后重试");
         evict(now);
@@ -49,7 +58,7 @@ public class LookupReceiptStore {
         Receipt receipt = items.get(id);
         if (receipt == null) throw new ApiProblem(410, "LOOKUP_EXPIRED", "查询凭据已过期");
         if (!receipt.userId().equals(userId)) throw new ApiProblem(404, "LOOKUP_NOT_FOUND", "查询凭据不存在");
-        if (clock.instant().isAfter(receipt.expiresAt())) {
+        if (!clock.instant().isBefore(receipt.expiresAt())) {
             items.remove(id);
             bytes -= estimate(receipt);
             throw new ApiProblem(410, "LOOKUP_EXPIRED", "查询凭据已过期");
@@ -61,7 +70,7 @@ public class LookupReceiptStore {
         var iterator = items.entrySet().iterator();
         while (iterator.hasNext()) {
             var entry = iterator.next();
-            if (now.isAfter(entry.getValue().expiresAt())) {
+            if (!now.isBefore(entry.getValue().expiresAt())) {
                 bytes -= estimate(entry.getValue());
                 iterator.remove();
             }
@@ -89,6 +98,8 @@ public class LookupReceiptStore {
             }
         }
         size += receipt.entryIds().size() * 80L + receipt.senseIds().size() * 80L;
+        for (var draft : receipt.favorites()) size += 256L + 2L * (length(draft.lemma()) + length(draft.lemmaKey())
+                + length(draft.meaning()) + length(draft.ipa()) + length(draft.entryKey()) + length(draft.senseKey()));
         return size;
     }
 

@@ -97,14 +97,29 @@ public class LookupService {
 
         boolean reportable = "FOUND".equals(result.status()) || "AMBIGUOUS".equals(result.status());
         UUID lookupId = null;
-        Instant expiresAt = null;        if (reportable) {
+        Instant expiresAt = null;
+        if (reportable) {
             List<String> entryIds = new ArrayList<>();
             List<String> senseIds = new ArrayList<>();
+            List<LookupReceiptStore.FavoriteDraft> favorites = new ArrayList<>();
             for (JsonNode region : regions) {
                 entryIds.add(region.path("entryId").asString());
-                for (JsonNode sense : region.path("senses")) senseIds.add(sense.path("senseId").asString());
+                for (JsonNode sense : region.path("senses")) {
+                    senseIds.add(sense.path("senseId").asString());
+                    String lemmaKey = region.path("lemmaKey").asString();
+                    String ipa = null;
+                    for (JsonNode phonetic : region.path("phonetics")) {
+                        if (!phonetic.path("ipa").asString().isBlank()) { ipa = phonetic.path("ipa").asString(); break; }
+                    }
+                    favorites.add(new LookupReceiptStore.FavoriteDraft(sense.path("senseId").asString(),
+                            region.path("entryKey").asString(), sense.path("senseKey").asString(),
+                            region.path("lemma").asString(region.path("headword").asString()),
+                            lemmaKey.isBlank() ? DictionaryJson.normalize(source.surface()) : lemmaKey,
+                            lemmaKey.isBlank() ? "SURFACE_FALLBACK" : region.path("lemmaMethod").asString("EXACT"),
+                            ipa, sense.path("pos").asString("unknown"), sense.path("zh").asString()));
+                }
             }
-            var receipt = receipts.create(principal.userId(), book.getId(), source, result.status(), dataset, entryIds, senseIds);
+            var receipt = receipts.create(principal.userId(), book.getId(), source, result.status(), dataset, entryIds, senseIds, favorites);
             lookupId = receipt.id();
             expiresAt = receipt.expiresAt();
         }

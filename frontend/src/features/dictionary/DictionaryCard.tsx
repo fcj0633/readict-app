@@ -1,11 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { Bookmark, Check, ChevronDown, Loader2, Volume2, X } from 'lucide-react';
+import { Check, ChevronDown, Loader2, Volume2, X } from 'lucide-react';
 import { placeCard } from '../reader/preview/position';
 import type { TextSelection } from '../reader/engine/selection';
 import type { LookupRegion, LookupViewState } from './model';
+import { FavoriteButton } from '../favorites/FavoriteButton';
+import '../favorites/favorites.css';
 import type { PlaybackState } from './PronunciationPlayer';
 
 interface Props {
+  bookId: string;
   selection: TextSelection;
   state: LookupViewState;
   activeRegion: number;
@@ -44,7 +47,7 @@ function candidateGroups(regions: LookupRegion[]): { label: string; index: numbe
   return Array.from(groups, ([label, index]) => ({ label, index }));
 }
 
-export function DictionaryCard({ selection, state, activeRegion, playback, onRegion, onRetry, onPlay, onClose }: Props) {
+export function DictionaryCard({ bookId, selection, state, activeRegion, playback, onRegion, onRetry, onPlay, onClose }: Props) {
   const cardRef = useRef<HTMLElement | null>(null);
   const [style, setStyle] = useState<CSSProperties>({ visibility: 'hidden' });
   const [expanded, setExpanded] = useState(false);
@@ -98,6 +101,8 @@ export function DictionaryCard({ selection, state, activeRegion, playback, onReg
     {state.phase === 'loading' && <div className="dictionary-loading" role="status">
       <Loader2 size={16} className="dictionary-spin" aria-hidden="true" />正在查询…
     </div>}
+
+    {(state.phase === 'error' || data?.status === 'NOT_FOUND' || data?.status === 'UNSUPPORTED_QUERY') && <FavoriteButton key={selection.source.wordRangeCfi} bookId={bookId} source={selection.source} lemma={selection.source.surface} />}
 
     {state.phase === 'error' && <div className="dictionary-error" role="alert">
       <p>{state.message ?? '查词暂时不可用。'}</p>
@@ -161,9 +166,9 @@ export function DictionaryCard({ selection, state, activeRegion, playback, onReg
         </div>
 
         <div className="dictionary-actions">
-          <button type="button" className="dictionary-action" disabled title="收藏将在 M06 接入">
-            <Bookmark size={15} aria-hidden="true" />收藏（M06）
-          </button>
+          {data.lookupId && senses[0]?.senseId ? <FavoriteButton key={`${data.lookupId}:${senses[0].senseId}`}
+            lookupId={data.lookupId} senseId={senses[0].senseId} source={data.source} lemma={region.lemma} />
+            : <span>词条未确认，暂不可收藏</span>}
           {data.resolvedLemmaKey && <span className="dictionary-lemma"><Check size={12} aria-hidden="true" />{data.resolvedLemmaKey}</span>}
         </div>
       </>}

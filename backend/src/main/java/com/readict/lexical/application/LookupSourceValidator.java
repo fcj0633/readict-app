@@ -29,6 +29,11 @@ public class LookupSourceValidator {
         if (source.artifactId() == null || !source.artifactId().equals(artifact.getId())) invalid();
         requireText(source.spineHref(), MAX_HREF);
         requireText(source.blockId(), MAX_BLOCK_ID);
+        if ((source.surface()!=null && source.surface().length()>MAX_SURFACE)
+                || (source.sentence()!=null && source.sentence().length()>MAX_SENTENCE)
+                || (source.wordRangeCfi()!=null && source.wordRangeCfi().getBytes(StandardCharsets.UTF_8).length>MAX_CFI_BYTES)
+                || (source.sentenceRangeCfi()!=null && source.sentenceRangeCfi().getBytes(StandardCharsets.UTF_8).length>MAX_CFI_BYTES))
+            throw new ApiProblem(422,"SOURCE_TOO_LONG","原文超出收藏长度限制");
         requireText(source.surface(), MAX_SURFACE);
         requireText(source.sentence(), MAX_SENTENCE);
         if (source.sentenceStart() == null || source.sentenceEnd() == null

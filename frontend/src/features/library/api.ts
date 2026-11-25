@@ -1,5 +1,5 @@
 import { ApiError } from '../../lib/api';
-import { request, upload, voidResponse } from '../../lib/http';
+import { request, upload } from '../../lib/http';
 import type { Book, BookStatus, ImportState, ImportTask, Shelf } from './model';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -77,7 +77,7 @@ export function createImport(file: File, idempotencyKey: string,
 }
 
 export function removeBook(bookId: string, idempotencyKey: string): Promise<void> {
-  return request('/books/' + bookId, voidResponse,
+  return request('/books/' + bookId, body => decodeDeleteAccepted(body, bookId),
     { method: 'DELETE', headers: { 'Idempotency-Key': idempotencyKey } });
 }
 
@@ -88,4 +88,8 @@ export function newRequestId(): string {
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = Array.from(bytes).map(value => value.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export function decodeDeleteAccepted(body: unknown, bookId: string): void {
+  if (!record(body) || body.bookId !== bookId || body.state !== 'DELETING') invalid();
 }

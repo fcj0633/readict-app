@@ -30,10 +30,11 @@ public class ImportService {
     private final EpubLimits limits;
     private final TransactionTemplate tx;
     private final ProgressService progress;
+    private final com.readict.favorites.infrastructure.persistence.FavoriteRepository favorites;
 
     public ImportService(BookMapper books, ImportTaskMapper tasks, BookStorage storage,
                          ImportSettings settings, EpubLimits limits, TransactionTemplate tx,
-                         ProgressService progress) {
+                         ProgressService progress, com.readict.favorites.infrastructure.persistence.FavoriteRepository favorites) {
         this.books = books;
         this.tasks = tasks;
         this.storage = storage;
@@ -41,6 +42,7 @@ public class ImportService {
         this.limits = limits;
         this.tx = tx;
         this.progress = progress;
+        this.favorites = favorites;
     }
 
     public Outcome upload(ReadictPrincipal principal, MultipartFile file, String idempotencyKey) {
@@ -206,6 +208,7 @@ public class ImportService {
             }
             if (books.markDeleting(bookId, principal.userId(), now) == 1) {
                 progress.deleteForBook(bookId);
+                favorites.detachBook(bookId);
                 tasks.markCleanupPending(bookId);
                 return new Outcome(bookId, null, false, true, false, false, "DELETING", "PUBLISHING", null, null);
             }

@@ -38,8 +38,8 @@ export function ReaderRail({ active, onToc, onFavorites, onSettings }: {
       data-label="目录" aria-label="章节目录" aria-pressed={active === 'contents'} onClick={onToc}>
       <List size={24} strokeWidth={1.6} aria-hidden="true" />
     </button>
-    <button type="button" className="reader-tool" data-label="收藏（M06）"
-      aria-label="收藏将在 M06 接入" title="收藏将在 M06 接入" disabled onClick={onFavorites}>
+    <button type="button" className="reader-tool" data-label="收藏"
+      aria-label="查看收藏" title="查看收藏" onClick={onFavorites}>
       <Bookmark size={23} strokeWidth={1.6} aria-hidden="true" />
     </button>
     <button type="button" className={`reader-tool${active === 'settings' ? ' active' : ''}`}

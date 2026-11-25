@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.readict.favorites.infrastructure.persistence.mapper.FavoriteMapper">
+  <select id="formEvidence" resultType="map">
+    SELECT COUNT(*) AS n FROM dictionary_form_mapping f JOIN dictionary_entry e ON e.dataset_id=f.dataset_id AND e.id=f.entry_id WHERE f.dataset_id=#{args[0]} AND f.surface_key=#{args[1]} AND e.lemma_key=#{args[2]}
+  </select>
+  <select id="bookForSource" resultType="map">
+    SELECT b.id FROM book b JOIN book_artifact a ON a.book_id=b.id WHERE a.id=#{args[0]} AND b.user_id=#{args[1]}
+  </select>
+  <insert id="insertWord">
+    INSERT INTO user_favorite_word(id,user_id,lemma_key,lemma,first_surface,ipa_snapshot,pos_snapshot,meaning_snapshot,dictionary_provider,dictionary_version,dictionary_dataset_id,dataset_version,entry_key,sense_key,lemma_method,normalization_version,created_at) VALUES(#{args[0]},#{args[1]},#{args[2]},#{args[3]},#{args[4]},#{args[5]},#{args[6]},#{args[7]},#{args[8]},#{args[9]},#{args[10]},#{args[11]},#{args[12]},#{args[13]},#{args[14]},#{args[15]},#{args[16]})
+  </insert>
+  <insert id="insertContext">
+    INSERT INTO favorite_word_context(id,favorite_word_id,book_id,chapter_id,origin_key,source_hash,artifact_hash,pipeline_version,context_key,spine_href,block_id,sentence_start,sentence_end,context_kind,sentence_snapshot,surface_snapshot,word_start,word_end,word_range_cfi,sentence_range_cfi,quote_prefix,quote_suffix,book_title_snapshot,chapter_title_snapshot,created_at) VALUES(#{args[0]},#{args[1]},#{args[2]},#{args[3]},#{args[4]},#{args[5]},#{args[6]},#{args[7]},#{args[8]},#{args[9]},#{args[10]},#{args[11]},#{args[12]},#{args[13]},#{args[14]},#{args[15]},#{args[16]},#{args[17]},#{args[18]},#{args[19]},#{args[20]},#{args[21]},#{args[22]},#{args[23]},#{args[24]})
+  </insert>
+  <delete id="expireReceipt">
+    DELETE FROM mutation_receipt WHERE user_id=#{args[0]} AND operation='FAVORITE_SAVE' AND request_id=#{args[1]}
+  </delete>
+  <insert id="insertReceipt">
+    INSERT INTO mutation_receipt(user_id,operation,request_id,request_hash,status,favorite_id,context_id,resource_state,result_json,expires_at,created_at) VALUES(#{args[0]},'FAVORITE_SAVE',#{args[1]},#{args[2]},'COMMITTED',#{args[3]},#{args[4]},'active',#{args[5]},#{args[6]},#{args[7]})
+  </insert>
+  <select id="receipt" resultType="map">
+    SELECT * FROM mutation_receipt WHERE user_id=#{args[0]} AND operation='FAVORITE_SAVE' AND request_id=#{args[1]}
+  </select>
+  <select id="existingWord" resultType="map">
+    SELECT id FROM user_favorite_word WHERE id=#{args[0]}
+  </select>
+  <delete id="deleteWord">
+    DELETE FROM user_favorite_word WHERE id=#{args[0]} AND user_id=#{args[1]}
+  </delete>
+  <update id="markDeleted">
+    UPDATE mutation_receipt SET resource_state='deleted' WHERE user_id=#{args[0]} AND favorite_id=#{args[1]}
+  </update>
+  <select id="matchWords" resultType="map">
+    SELECT w.* FROM user_favorite_word w WHERE w.user_id=#{args[0]} AND (w.lemma_key=#{args[1]} OR w.first_surface=#{args[2]} OR EXISTS(SELECT 1 FROM dictionary_form_mapping f JOIN dictionary_entry e ON e.dataset_id=f.dataset_id AND e.id=f.entry_id WHERE f.dataset_id=w.dictionary_dataset_id AND f.surface_key=#{args[3]} AND e.lemma_key=w.lemma_key))
+  </select>
+  <select id="word" resultType="map">
+    SELECT * FROM user_favorite_word WHERE user_id=#{args[0]} AND id=#{args[1]} <if test="args[2]">FOR UPDATE</if>
+  </select>
+  <select id="lemma" resultType="map">
+    SELECT * FROM user_favorite_word WHERE user_id=#{args[0]} AND lemma_key=#{args[1]} <if test="args[2]">FOR UPDATE</if>
+  </select>
+  <select id="count" resultType="int">
+    SELECT COUNT(*) FROM favorite_word_context WHERE favorite_word_id=#{args[0]}
+  </select>
+  <select id="context" resultType="map">
+    SELECT * FROM favorite_word_context WHERE favorite_word_id=#{args[0]} AND context_key=#{args[1]}
+  </select>
+  <update id="detachBook">
+    UPDATE favorite_word_context SET book_id=NULL,chapter_id=NULL WHERE book_id=#{args[0]}
+  </update>
+  <sql id="contextJoins">
+    FROM favorite_word_context c JOIN user_favorite_word w ON w.id=c.favorite_word_id
+    LEFT JOIN book b ON b.id=c.book_id AND b.user_id=w.user_id
+    LEFT JOIN book_artifact a ON a.id=b.active_artifact_id
+  </sql>
+  <sql id="contextColumns">
+    c.*,w.lemma,a.id AS active_artifact_id,
+    (b.status='READY' AND a.status='READY' AND a.artifact_hash=c.artifact_hash AND a.pipeline_version=c.pipeline_version) AS available
+  </sql>
+  <select id="stats" resultType="map">
+    SELECT COUNT(DISTINCT w.id) AS words,COUNT(c.id) AS contexts FROM user_favorite_word w
+    LEFT JOIN favorite_word_context c ON c.favorite_word_id=w.id WHERE w.user_id=#{user}
+  </select>
+  <select id="contexts" resultType="map">
+    SELECT <include refid="contextColumns"/> <include refid="contextJoins"/>
+    WHERE w.user_id=#{user} AND w.id=#{favorite} ORDER BY c.created_at,c.id
+  </select>
+  <select id="sources" resultType="map">
+    SELECT c.origin_key,c.book_title_snapshot,MAX(c.book_id) AS book_id,COUNT(*) AS context_count,
+      MAX(c.created_at) AS last_created_at,
+      MAX(COALESCE(b.status='READY' AND a.status='READY' AND a.artifact_hash=c.artifact_hash AND a.pipeline_version=c.pipeline_version,0)) AS available
+    <include refid="contextJoins"/>
+    WHERE w.user_id=#{user} GROUP BY c.origin_key,c.book_title_snapshot ORDER BY last_created_at DESC,c.origin_key
+  </select>
+  <select id="list" resultType="map">
+    <choose>
+      <when test="words">
+        SELECT w.*,(SELECT COUNT(*) FROM favorite_word_context x WHERE x.favorite_word_id=w.id) AS context_count
+        FROM user_favorite_word w
+      </when>
+      <otherwise>SELECT <include refid="contextColumns"/> <include refid="contextJoins"/></otherwise>
+    </choose>
+    WHERE w.user_id=#{user}
+    <if test="pattern != null">
+      AND (w.lemma LIKE #{pattern} ESCAPE '!' OR
+      <choose>
+        <when test="words">EXISTS(SELECT 1 FROM favorite_word_context x WHERE x.favorite_word_id=w.id AND x.sentence_snapshot LIKE #{pattern} ESCAPE '!')</when>
+        <otherwise>c.sentence_snapshot LIKE #{pattern} ESCAPE '!'</otherwise>
+      </choose>)
+    </if>
+    <if test="origin != null">
+      <choose>
+        <when test="words">AND EXISTS(SELECT 1 FROM favorite_word_context x WHERE x.favorite_word_id=w.id AND x.origin_key=#{origin})</when>
+        <otherwise>AND c.origin_key=#{origin}</otherwise>
+      </choose>
+    </if>
+    <if test="afterAt != null">
+      <choose>
+        <when test="words">
+          AND (w.created_at <choose><when test="recent">&lt;</when><otherwise>&gt;</otherwise></choose> #{afterAt}
+          OR (w.created_at=#{afterAt} AND w.id <choose><when test="recent">&lt;</when><otherwise>&gt;</otherwise></choose> #{afterId}))
+        </when>
+        <otherwise>
+          AND (c.created_at <choose><when test="recent">&lt;</when><otherwise>&gt;</otherwise></choose> #{afterAt}
+          OR (c.created_at=#{afterAt} AND c.id <choose><when test="recent">&lt;</when><otherwise>&gt;</otherwise></choose> #{afterId}))
+        </otherwise>
+      </choose>
+    </if>
+    ORDER BY <choose>
+      <when test="words">w.created_at <if test="recent">DESC</if>,w.id <if test="recent">DESC</if></when>
+      <otherwise>c.created_at <if test="recent">DESC</if>,c.id <if test="recent">DESC</if></otherwise>
+    </choose> LIMIT #{limit}
+  </select>
+</mapper>

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeBook, decodeImport, decodeShelf, newRequestId } from './api';
+import { decodeBook, decodeImport, decodeShelf, decodeDeleteAccepted, newRequestId } from './api';
 
 const book = {
   id: 'b0000000-0000-4000-8000-000000000001',
@@ -46,4 +46,10 @@ test('generates RFC 4122 version 4 request ids', () => {
   const second = newRequestId();
   assert.match(first, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.notEqual(first, second);
+});
+
+test('accepts the asynchronous book deletion receipt and rejects unrelated responses', () => {
+  assert.equal(decodeDeleteAccepted({ bookId: book.id, state: 'DELETING' }, book.id), undefined);
+  assert.throws(() => decodeDeleteAccepted({ bookId: book.id, state: 'READY' }, book.id));
+  assert.throws(() => decodeDeleteAccepted({ bookId: 'other', state: 'DELETING' }, book.id));
 });

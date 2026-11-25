@@ -43,8 +43,8 @@ class LookupServiceTest {
         when(audio.find("child", "col-normalize-v1")).thenReturn(new AudioCatalog.Pronunciations("available", "child", "local-sound", "audio-1", "audio-v1", List.of(item)));
         when(audio.findInDataset("good", "col-normalize-v1", "audio-1")).thenReturn(new AudioCatalog.Pronunciations("missing", "good", "local-sound", "audio-1", "audio-v1", List.of()));
         UUID receiptId = UUID.randomUUID();
-        when(receipts.create(any(), any(), any(), any(), any(), any(), any())).thenReturn(new LookupReceiptStore.Receipt(
-                receiptId, userId, bookId, artifactId, "AMBIGUOUS", null, source, List.of("e1"), List.of("s1"), Instant.now().plusSeconds(600)));
+        when(receipts.create(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(new LookupReceiptStore.Receipt(
+                receiptId, userId, bookId, artifactId, "AMBIGUOUS", null, source, List.of("e1"), List.of("s1"), Instant.now().plusSeconds(600), List.of()));
 
         LookupResponse response = service.lookup(new ReadictPrincipal(userId, 0, Instant.now()),
                 new LookupRequest(bookId, new SourceContext(artifactId, "OEBPS/Text/ch1.xhtml", "b-1", 0, 25, "The children are running.", "children", 4, 12, "epubcfi(/6/2!/4/2/1:4)", "epubcfi(/6/2!/4/2/1:0)", new Quote("The children are running.", "", "")), null, null));
@@ -72,8 +72,8 @@ class LookupServiceTest {
         when(dictionary.lookup("children", null)).thenReturn(new DictionaryProvider.LookupResult("FOUND", "children", dataset,
                 "child", DictionaryJson.parse("[{\"entryId\":\"e1\",\"headword\":\"child\",\"senses\":[]}]")));
         when(audio.find("child", "col-normalize-v1")).thenThrow(new com.readict.lexical.core.DictionaryJson.DictionaryFailure("AUDIO_NOT_READY"));
-        when(receipts.create(any(), any(), any(), any(), any(), any(), any())).thenReturn(new LookupReceiptStore.Receipt(
-                UUID.randomUUID(), userId, bookId, artifactId, "FOUND", null, source, List.of("e1"), List.of(), Instant.now()));
+        when(receipts.create(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(new LookupReceiptStore.Receipt(
+                UUID.randomUUID(), userId, bookId, artifactId, "FOUND", null, source, List.of("e1"), List.of(), Instant.now(), List.of()));
 
         LookupResponse response = service.lookup(new ReadictPrincipal(userId, 0, Instant.now()),
                 new LookupRequest(bookId, new SourceContext(artifactId, "OEBPS/Text/ch1.xhtml", "b-1", 0, 25, "The children are running.", "children", 4, 12, "epubcfi(/6/2!/4/2/1:4)", "epubcfi(/6/2!/4/2/1:0)", new Quote("The children are running.", "", "")), null, null));

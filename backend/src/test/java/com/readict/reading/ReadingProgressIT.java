@@ -33,6 +33,7 @@ import com.readict.support.TestDatabaseInitializer;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "readict.auth.rate-hmac-key=reading-integration-rate-secret-0000000000000000",
         "readict.verification.hmac-key=reading-integration-code-secret-0000000000000000"})
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 @ContextConfiguration(initializers = TestDatabaseInitializer.class)
 class ReadingProgressIT {
     private static final String HREF = "OEBPS/Text/ch1.xhtml";
