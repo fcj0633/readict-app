@@ -24,13 +24,9 @@ public class FavoriteRepository {
 
     public Map<String,Object> word(UUID user,UUID favorite,boolean lock) { return mapper.word(new Object[]{bytes(user),bytes(favorite),lock}); }
     public Map<String,Object> lemma(UUID user,String lemma,boolean lock) { return mapper.lemma(new Object[]{bytes(user),lemma,lock}); }
-    public int count(UUID favorite) { return mapper.count(new Object[]{bytes(favorite)}); }
-    public Map<String,Object> context(UUID favorite,byte[] key) { return mapper.context(new Object[]{bytes(favorite),key}); }
-    public void detachBook(UUID book) { mapper.detachBook(new Object[]{bytes(book)}); }
     public Map<String,Object> formEvidence(Object... args) { return mapper.formEvidence(args); }
-    public Map<String,Object> bookForSource(Object... args) { return mapper.bookForSource(args); }
     public int insertWord(Object... args) { return mapper.insertWord(args); }
-    public int insertContext(Object... args) { return mapper.insertContext(args); }
+    public int insertExample(Object... args) { return mapper.insertExample(args); }
     public int expireReceipt(Object... args) { return mapper.expireReceipt(args); }
     public int insertReceipt(Object... args) { return mapper.insertReceipt(args); }
     public Map<String,Object> receipt(Object... args) { return mapper.receipt(args); }
@@ -41,5 +37,5 @@ public class FavoriteRepository {
     public List<Map<String,Object>> list(Map<String,Object> filter) { return mapper.list(filter); }
     public Map<String,Object> stats(UUID user) { return mapper.stats(bytes(user)); }
     public List<Map<String,Object>> sources(UUID user) { return mapper.sources(bytes(user)); }
-    public List<Map<String,Object>> contexts(UUID user,UUID favorite) { return mapper.contexts(bytes(user),bytes(favorite)); }
+    public List<Map<String,Object>> examples(UUID user,UUID favorite) { return mapper.examples(bytes(user),bytes(favorite)); }
 }

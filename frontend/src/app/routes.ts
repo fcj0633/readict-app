@@ -17,12 +17,7 @@ export function safeReturnTo(raw: string | null): string {
     return from && url.searchParams.getAll('from').length === 1 && parseReaderPath(from)
       ? '/favorites?' + new URLSearchParams({ from }) : '/favorites';
   }
-  if (parseReaderPath(path)) {
-    const favorite = url.searchParams.get('favorite'), context = url.searchParams.get('context');
-    return favorite && context && UUID.test(favorite) && UUID.test(context)
-      && url.searchParams.getAll('favorite').length === 1 && url.searchParams.getAll('context').length === 1
-      ? path + '?' + new URLSearchParams({ favorite, context }) : path;
-  }
+  if (parseReaderPath(path)) return path;
   return '/books';
 }
 export const loginHref = (location: { pathname: string; search: string }) =>

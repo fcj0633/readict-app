@@ -111,6 +111,7 @@ export interface ReaderEngine {
   currentSpine(): { href: string; index: number } | null;
   pageInfo(): { page: number; total: number; atStart: boolean; atEnd: boolean } | null;
   subscribe(listener: (event: ReaderEvent) => void): () => void;
+  invalidateSelection(): void;
   destroy(): Promise<void>;
 }
 

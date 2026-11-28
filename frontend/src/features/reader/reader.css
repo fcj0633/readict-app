@@ -480,6 +480,8 @@
   width: 360px;
   max-width: calc(100vw - 32px);
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--paper);
@@ -585,9 +587,10 @@
   .reader-shell *, .reader-shell *::after { transition: none !important; animation: none !important; }
 }
 
-.dictionary-card { width: 390px; }
+.dictionary-card { width: 390px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .dictionary-inline-ipa { margin-left: 8px; color: var(--muted); font-family: Georgia, "Palatino Linotype", serif; font-size: 12px; }
 .dictionary-loading, .dictionary-error, .dictionary-empty { padding: 14px 18px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+.dictionary-sense-empty { margin: 0; padding: 8px 18px 12px; color: var(--muted); font-size: 12px; }
 .dictionary-loading { display: flex; align-items: center; gap: 7px; }
 .dictionary-error p, .dictionary-empty p { margin: 0 0 4px; color: var(--ink); }
 .dictionary-error .dictionary-action { margin-top: 8px; }

@@ -14,13 +14,14 @@ export interface Placement {
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 /**
- * Places the dictionary card beside the selected word: prefer the right, flip left when the
- * right side is too narrow, then clamp inside the viewport. Card height is bounded to 75vh.
+ * Places the dictionary card beside the selected word. The top-left is fixed for the lifetime
+ * of one lookup; expansion only grows a bounded internal scroll area.
  */
 export function placeCard(anchor: AnchorRect, card: Size, viewport: Size, gap = 14, margin = 16,
                           topMargin = 72): Placement {
-  const maxHeight = Math.max(120, Math.min(viewport.height * 0.75, viewport.height - topMargin - margin));
-  const height = Math.min(card.height, maxHeight);
+  const room = Math.max(1, viewport.height - topMargin - margin);
+  const cap = Math.min(Math.floor(viewport.height * 0.75), room);
+  const reserve = Math.min(cap, Math.max(Math.min(card.height, cap), 300));
   const rightSpace = viewport.width - margin - (anchor.right + gap);
   const leftSpace = anchor.left - gap - margin;
   const fitsRight = rightSpace >= Math.min(card.width, viewport.width - margin * 2);
@@ -28,7 +29,9 @@ export function placeCard(anchor: AnchorRect, card: Size, viewport: Size, gap = 
   const placement: 'right' | 'left' = fitsRight || (!fitsLeft && rightSpace >= leftSpace) ? 'right' : 'left';
   const rawLeft = placement === 'right' ? anchor.right + gap : anchor.left - gap - card.width;
   const left = clamp(rawLeft, margin, Math.max(margin, viewport.width - margin - card.width));
-  const top = clamp(anchor.top - 8, topMargin, Math.max(topMargin, viewport.height - margin - height));
+  const top = clamp(anchor.top - 8, topMargin,
+    Math.max(topMargin, viewport.height - margin - reserve));
+  const maxHeight = Math.min(cap, Math.max(1, viewport.height - margin - top));
   return { left, top, placement, maxHeight };
 }
 

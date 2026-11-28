@@ -2,7 +2,7 @@ import ePub from 'epubjs';
 import type { Book, Contents, Location, Rendition } from 'epubjs';
 import { collectBlocks, globalOffsetOf, locate, rangeForGlobal, verifyBlocks, type BlockText } from './blocks';
 import { buildQuote, findQuote, quoteMatches } from './anchor';
-import { wordAt, sentenceAt, sentenceWordRange, quoteParts, type TextSelection, type SelectionRect } from './selection';
+import { wordAt, sentenceAt, sentenceWordRange, quoteParts, type TextSelection } from './selection';
 import { themeRules } from './preferences';
 import type {
   ReaderEngine, ReaderEngineOptions, ReaderEvent, ReaderPreferences, ReadingAnchor,
@@ -52,6 +52,7 @@ export class EpubJsEngine implements ReaderEngine {
   private pendingDirection: 'next' | 'previous' | null = null;
   private keyboardDocuments = new WeakSet<Document>();
   private selectionDocuments = new WeakSet<Document>();
+  private selectionGeneration = 0;
 
   constructor(options: ReaderEngineOptions) {
     this.host = options.host;
@@ -145,26 +146,8 @@ export class EpubJsEngine implements ReaderEngine {
   }
 
   /** Resolve the saved target from verified indexed text, without wrapping EPUB nodes. */
-  async favoriteSelection(anchor: ReadingAnchor, wordStart: number, wordEnd: number): Promise<SelectionRect | null> {
-    if (this.disposed || anchor.artifactId !== this.manifest.artifactId
-      || anchor.artifactHash !== this.manifest.artifactHash || anchor.pipelineVersion !== this.manifest.pipelineVersion
-      || this.currentSpine()?.href !== anchor.spineHref || !anchor.quote || anchor.blockOffset === undefined
-      || !Number.isSafeInteger(wordStart) || !Number.isSafeInteger(wordEnd) || wordStart < 0 || wordEnd <= wordStart
-      || wordEnd > anchor.quote.exact.length) return null;
-    const chapter = await this.chapterBlocks(anchor.spineHref);
-    const blockIndex = chapter.index.blocks.findIndex(b => b.blockId === anchor.blockId);
-    const block = chapter.blocks[blockIndex];
-    const root = this.docRoot();
-    if (!chapter.verified || !block || !root || !quoteMatches(block.text, anchor.blockOffset, anchor.quote)) return null;
-    const range = rangeForGlobal(root, block.globalStart + anchor.blockOffset + wordStart,
-      block.globalStart + anchor.blockOffset + wordEnd);
-    const iframe = this.host.querySelector('iframe');
-    if (!range || !iframe || range.toString() !== anchor.quote.exact.slice(wordStart, wordEnd)) return null;
-    const rect = range.getBoundingClientRect(), frame = iframe.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0 || rect.right <= 0 || rect.left >= frame.width
-      || rect.bottom <= 0 || rect.top >= frame.height) return null;
-    return { left: frame.left + rect.left, top: frame.top + rect.top,
-      right: frame.left + rect.right, bottom: frame.top + rect.bottom, width: rect.width, height: rect.height };
+  invalidateSelection(): void {
+    this.selectionGeneration++;
   }
 
   async next(): Promise<void> { await this.navigate('next'); }
@@ -251,6 +234,7 @@ export class EpubJsEngine implements ReaderEngine {
 
   private onRelocated(location: Location, generation: number): void {
     if (this.disposed || generation !== this.generation) return;
+    this.selectionGeneration++;
     this.lastLocation = location;
     this.lastRelocatedAt = performance.now();
     if (this.suppress > 0) return;
@@ -399,17 +383,19 @@ export class EpubJsEngine implements ReaderEngine {
       if (target?.closest('a,button,input,textarea,select,[role="button"],[contenteditable="true"]')) return;
       const current = selectionDocument.getSelection();
       if (current && !current.isCollapsed) return;
-      void this.selectionAt(selectionDocument, event.clientX, event.clientY).then(result => {
-        if (this.disposed) return;
+      const generation = ++this.selectionGeneration;
+      void this.selectionAt(selectionDocument, event.clientX, event.clientY, generation).then(result => {
+        if (this.disposed || generation !== this.selectionGeneration) return;
         if (result && 'error' in result) this.emit({ type: 'selection', selection: null, error: result.error });
         else if (result) this.emit({ type: 'selection', selection: result });
-      }).catch(() => { /* A click outside a valid block is not a query. */ });
+        else this.emit({ type: 'selection', selection: null });
+      }).catch(() => { /* A dictionary query failing must not turn a blank click into a selection. */ });
     };
     selectionDocument.addEventListener('pointerup', handler);
     this.cleanups.push(() => selectionDocument.removeEventListener('pointerup', handler));
   }
 
-  private async selectionAt(document_: Document, clientX: number, clientY: number):
+  private async selectionAt(document_: Document, clientX: number, clientY: number, generation: number):
     Promise<TextSelection | { error: 'TEXT_INDEX_MISMATCH' } | null> {
     const position = caretAt(document_, clientX, clientY);
     if (!position || position.node.nodeType !== Node.TEXT_NODE) return null;
@@ -419,6 +405,8 @@ export class EpubJsEngine implements ReaderEngine {
     const global = globalOffsetOf(root, position.node, position.offset);
     if (global === null) return null;
     const chapter = await this.chapterBlocks(href);
+    if (this.disposed || generation !== this.selectionGeneration
+      || this.docRoot() !== root || this.currentHref() !== href) return null;
     if (!chapter.verified) return { error: 'TEXT_INDEX_MISMATCH' };
     const located = locate(chapter.blocks, global);
     if (!located) return null;

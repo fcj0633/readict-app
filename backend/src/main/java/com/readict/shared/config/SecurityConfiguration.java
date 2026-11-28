@@ -51,6 +51,7 @@ public class SecurityConfiguration {
                 .requestMatchers(HttpMethod.PUT,"/api/v1/auth/password","/api/v1/me/settings").authenticated()
                 .requestMatchers(HttpMethod.POST,"/api/v1/auth/verification/challenges","/api/v1/auth/verification/verify").authenticated()
                 .requestMatchers(HttpMethod.GET,"/api/v1/favorites","/api/v1/favorites/*").authenticated()
+                .requestMatchers(HttpMethod.GET,"/api/v1/favorites/*/pronunciations").authenticated()
                 .requestMatchers(HttpMethod.POST,"/api/v1/favorites","/api/v1/favorites/state-source").authenticated()
                 .requestMatchers(HttpMethod.DELETE,"/api/v1/favorites/*").authenticated()
                 .anyRequest().denyAll())

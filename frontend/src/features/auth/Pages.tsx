@@ -20,12 +20,12 @@ export function useAction() {
 }
 export function ErrorNotice({ message }: { message: string }) { return message ? <p className="form-error" role="alert" id="form-error">{message}</p> : null; }
 export function IdentifierFields({ type, setType, value, setValue, disabled }: { type: 'email' | 'phone'; setType: (type: 'email' | 'phone') => void; value: string; setValue: (value: string) => void; disabled: boolean }) {
-  return <><div className="identifier-tabs" role="group" aria-label="账号类型"><button type="button" aria-pressed={type === 'email'} disabled={disabled} onClick={() => { setType('email'); setValue(''); }}>邮箱</button><button type="button" aria-pressed={type === 'phone'} disabled={disabled} onClick={() => { setType('phone'); setValue(''); }}>手机号</button></div>
+  return <><div className="identifier-tabs" role="group" aria-label="账号类型"><button type="button" aria-pressed={type === 'phone'} disabled={disabled} onClick={() => { setType('phone'); setValue(''); }}>手机号</button><button type="button" aria-pressed={type === 'email'} disabled={disabled} onClick={() => { setType('email'); setValue(''); }}>邮箱</button></div>
     <label htmlFor="identifier">{type === 'email' ? '邮箱地址' : '中国大陆手机号'}</label><div className="identifier-input">{type === 'phone' && <span className="phone-prefix" aria-label="固定区号 +86">+86</span>}<input id="identifier" name="username" type={type === 'email' ? 'email' : 'tel'} inputMode={type === 'phone' ? 'tel' : 'email'} autoComplete="username" value={value} onChange={e => setValue(type === 'phone' ? api.phoneInput(e.target.value) : e.target.value)} maxLength={type === 'phone' ? 32 : 254} required disabled={disabled} aria-describedby="identifier-hint form-error" placeholder={type === 'phone' ? '11 位手机号' : 'name@example.com'} /></div>
     <p id="identifier-hint" className="field-hint">{type === 'phone' ? '仅支持中国大陆 +86，可粘贴带 +86 的完整号码。' : '邮箱登录不区分大小写。'}</p></>;
 }
 export function CredentialPage({ registration = false }: { registration?: boolean }) {
-  const [type, setType] = useState<'email' | 'phone'>('email'); const [identifier, setIdentifier] = useState(''); const [password, setPassword] = useState(''); const [confirmation, setConfirmation] = useState('');
+  const [type, setType] = useState<'email' | 'phone'>('phone'); const [identifier, setIdentifier] = useState(''); const [password, setPassword] = useState(''); const [confirmation, setConfirmation] = useState('');
   const action = useAction(); const auth = useAuth(); const navigate = useNavigate(); const [query] = useSearchParams(); const location = useLocation();
   if (auth.status === 'checking') return <p role="status">正在确认登录状态…</p>;
   if (auth.status === 'authenticated') return <Navigate to={api.safeReturnTo(query.get('returnTo'))} replace />;
@@ -45,7 +45,7 @@ export function CredentialPage({ registration = false }: { registration?: boolea
 }
 export function useCooldown() { const [until, setUntil] = useState(0); const [now, setNow] = useState(Date.now()); useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []); return { seconds: Math.max(0, Math.ceil((until - now) / 1000)), start: (seconds: number) => { setNow(Date.now()); setUntil(Date.now() + seconds * 1000); } }; }
 export function ForgotPage() {
-  const [type, setType] = useState<'email' | 'phone'>('email'); const [identifier, setIdentifier] = useState(''); const [challenge, setChallenge] = useState<api.Challenge>(); const [proof, setProof] = useState('');
+  const [type, setType] = useState<'email' | 'phone'>('phone'); const [identifier, setIdentifier] = useState(''); const [challenge, setChallenge] = useState<api.Challenge>(); const [proof, setProof] = useState('');
   const action = useAction(); const cooldown = useCooldown(); const recovery = useContext(RecoveryContext); const navigate = useNavigate(); const [query] = useSearchParams();
   useEffect(() => { recovery.set(undefined); }, []);
   return <section className="auth-panel"><p className="section-intro">找回账号</p><h1>重新连接你的阅读。</h1><p className="panel-description">通过账号绑定的联系方式验证后，设置新密码。</p><p className="simulation-note">真实短信／邮件通道尚未接入。仅显式开启本机模拟时可验证流程，模拟不证明真实归属。</p>

@@ -19,69 +19,54 @@ import com.readict.shared.web.ApiProblem;
 
 @Service
 public class FavoriteService {
+    /** favoriteId stays in the wire record for old request-hash compatibility; new clients never send it. */
     public record SaveRequest(UUID lookupId, String senseId, UUID favoriteId, SourceContext source) {}
-    public record State(String state, UUID favoriteId, UUID contextId, int contextCount) {}
-    public record Saved(UUID favoriteId, UUID contextId, String lemmaKey, String state,
-                        boolean createdWord, boolean createdContext, int contextCount, String resourceState) {}
+    public record State(String state, UUID favoriteId) {}
+    public record Saved(UUID favoriteId, String lemmaKey, String state, boolean createdWord, String resourceState) {}
     private final FavoriteRepository db;
     private final BookMapper books;
     private final BookArtifactMapper artifacts;
-    private final BookChapterMapper chapters;
     private final LookupSourceValidator sources;
     private final LookupReceiptStore receipts;
-    private final DictionaryProvider dictionary;
     private final Clock clock;
     private final TransactionTemplate tx;
+
     public FavoriteService(FavoriteRepository db, BookMapper books, BookArtifactMapper artifacts,
-                           BookChapterMapper chapters, LookupSourceValidator sources, LookupReceiptStore receipts,
-                           DictionaryProvider dictionary, Clock clock, TransactionTemplate template) {
-        this.db=db; this.books=books; this.artifacts=artifacts; this.chapters=chapters;
-        this.sources=sources; this.receipts=receipts; this.dictionary=dictionary; this.clock=clock;
+                           LookupSourceValidator sources, LookupReceiptStore receipts,
+                           Clock clock, TransactionTemplate template) {
+        this.db=db; this.books=books; this.artifacts=artifacts;
+        this.sources=sources; this.receipts=receipts; this.clock=clock;
         this.tx=new TransactionTemplate(template.getTransactionManager());
         tx.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
+
     private LookupReceiptStore.FavoriteDraft draft(LookupReceiptStore.Receipt receipt, String sense) {
         if(!Set.of("FOUND","AMBIGUOUS").contains(receipt.status()))
             throw new ApiProblem(409,"FAVORITE_WORD_UNAVAILABLE","当前词条未确认，请重新查词后收藏");
         return receipt.favorites().stream().filter(d -> d.senseId().equals(sense)).findFirst()
                 .orElseThrow(() -> new ApiProblem(400,"INVALID_REQUEST","请选择有效词义"));
     }
+
+    /** The subject, not the current sentence, decides the only user-visible state. */
     public State state(UUID user, UUID lookup, String sense) {
         var receipt=receipts.find(lookup,user);
         var draft=draft(receipt,sense);
         var word=db.lemma(user,draft.lemmaKey(),false);
-        if(word==null) return new State("NONE",null,null,0);
-        UUID favorite=id(word,"id");
-        BookEntity book=books.findOwned(receipt.bookId(),user);
-        if(book==null) throw new ApiProblem(404,"BOOK_NOT_FOUND","书籍不存在");
-        var context=db.context(favorite,ContextKey.of(book.getOriginKey(),receipt.source()));
-        return new State(context==null?"WORD":"CONTEXT",favorite,context==null?null:id(context,"id"),db.count(favorite));
+        return word==null ? new State("NOT_FAVORITED",null)
+                : new State("FAVORITED",id(word,"id"));
     }
+
     public Saved save(UUID user, UUID request, SaveRequest body) {
-        if(body==null || body.source()==null || (body.lookupId()==null)==(body.favoriteId()==null)
-                || (body.lookupId()!=null && (body.senseId()==null || body.senseId().isBlank()))) invalid();
+        if(body==null || body.source()==null || body.lookupId()==null || body.favoriteId()!=null
+                || body.senseId()==null || body.senseId().isBlank()) invalid();
         byte[] hash=hash(DictionaryJson.json(body));
-        // Resolve receipt/dictionary once, outside the retried transaction. A committed replay needs neither.
+        // A committed replay needs neither the book nor the dictionary.
         var previous=receipt(user,request);
         if(previous!=null && time(previous,"expires_at").isAfter(clock.instant())) return replay(user,hash,previous);
-        LookupReceiptStore.Receipt lookup=body.lookupId()==null?null:receipts.find(body.lookupId(),user);
-        var selected=lookup==null?null:draft(lookup,body.senseId());
-        UUID bookId=lookup==null?bookForSource(user,body.source().artifactId()):lookup.bookId();
-        String confirmed=null;
-        if(lookup==null) {
-            var existing=db.word(user,body.favoriteId(),false);
-            if(existing==null) throw missing();
-            String expected=text(existing,"lemma_key");
-            if(confirms(existing,body.source().surface())) confirmed=expected;
-            else try {
-                var result=dictionary.lookup(body.source().surface(),null);
-                if(expected.equals(result.resolvedLemmaKey())) confirmed=expected;
-            } catch(DictionaryJson.DictionaryFailure ignored) { /* No speculative form guessing. */ }
-            if(confirmed==null) throw new ApiProblem(409,"LEMMA_UNCONFIRMED","无法确认当前词形属于该收藏");
-        }
-        String lemma=confirmed;
+        LookupReceiptStore.Receipt lookup=receipts.find(body.lookupId(),user);
+        var selected=draft(lookup,body.senseId());
         for(int attempt=0;;attempt++) {
-            try { return tx.execute(status -> persist(user,request,hash,body,lookup,selected,bookId,lemma)); }
+            try { return tx.execute(status -> persist(user,request,hash,body,lookup,selected)); }
             catch(TransientDataAccessException | DuplicateKeyException error) {
                 if(attempt>=2) throw error;
                 try { Thread.sleep(java.util.concurrent.ThreadLocalRandom.current().nextInt(10,40)); }
@@ -89,6 +74,7 @@ public class FavoriteService {
             }
         }
     }
+
     private boolean confirms(Map<String,Object> word,String surface) {
         String key=normalize(surface), expected=text(word,"lemma_key");
         if(expected.equals(key)) return true;
@@ -99,7 +85,10 @@ public class FavoriteService {
         var row=db.formEvidence(bytes(dataset),key,expected);
         return ((Number)row.get("n")).intValue()>0;
     }
+
     public record SourceRequest(UUID bookId,SourceContext source) {}
+
+    /** Used only when lookup/dictionary is unavailable; it can identify an existing subject. */
     public State stateSource(UUID user,SourceRequest request) {
         if(request==null || request.bookId()==null || request.source()==null) invalid();
         var book=books.findOwned(request.bookId(),user);
@@ -111,19 +100,12 @@ public class FavoriteService {
         var candidates=db.matchWords(bytes(user),normalize(source.surface()),source.surface(),normalize(source.surface()));
         var matches=candidates.stream().filter(w -> confirms(w,source.surface())).toList();
         if(matches.size()!=1) throw new ApiProblem(409,"FAVORITE_WORD_UNAVAILABLE","当前词条未确认，请重新查词后收藏");
-        UUID favorite=id(matches.getFirst(),"id");
-        var context=db.context(favorite,ContextKey.of(book.getOriginKey(),source));
-        return new State(context==null?"WORD":"CONTEXT",favorite,context==null?null:id(context,"id"),db.count(favorite));
+        return new State("FAVORITED",id(matches.getFirst(),"id"));
     }
-    private UUID bookForSource(UUID user,UUID artifact) {
-        if(artifact==null) { invalid(); }
-        var row=db.bookForSource(bytes(artifact),bytes(user));
-        if(row==null) throw new ApiProblem(404,"BOOK_NOT_FOUND","书籍不存在");
-        return id(row,"id");
-    }
+
     private Saved persist(UUID user,UUID request,byte[] hash,SaveRequest body,LookupReceiptStore.Receipt lookup,
-                          LookupReceiptStore.FavoriteDraft draft,UUID bookId,String confirmed) {
-        BookEntity book=books.lockOwned(bookId,user);
+                          LookupReceiptStore.FavoriteDraft draft) {
+        BookEntity book=books.lockOwned(lookup.bookId(),user);
         if(book==null) throw new ApiProblem(404,"BOOK_NOT_FOUND","书籍不存在");
         var previous=receipt(user,request);
         if(previous!=null && time(previous,"expires_at").isAfter(clock.instant())) return replay(user,hash,previous);
@@ -131,15 +113,12 @@ public class FavoriteService {
         var artifact=artifacts.selectById(book.getActiveArtifactId());
         if(artifact==null || !"READY".equals(artifact.getStatus())) throw new ApiProblem(409,"BOOK_NOT_READY","书籍当前不可收藏");
         var source=sources.validate(artifact,body.source());
-        if(lookup!=null && !source.equals(lookup.source())) throw new ApiProblem(422,"SOURCE_INVALID","收藏来源与查词位置不一致");
-        var chapter=chapters.listByArtifact(artifact.getId()).stream().filter(c -> c.getSpineHref().equals(source.spineHref())).findFirst()
-                .orElseThrow(() -> new ApiProblem(422,"SOURCE_INVALID","收藏章节不存在"));
-        String lemma=draft==null?confirmed:draft.lemmaKey();
+        if(!source.equals(lookup.source())) throw new ApiProblem(422,"SOURCE_INVALID","收藏来源与查词位置不一致");
+        String lemma=draft.lemmaKey();
         var word=db.lemma(user,lemma,true);
         boolean createdWord=false;
         Instant now=clock.instant();
         if(word==null) {
-            if(draft==null) throw missing();
             if(draft.meaning().length()>10000 || draft.lemmaKey().length()>128 || draft.lemma().length()>128
                     || (draft.ipa()!=null && draft.ipa().length()>256)) throw new ApiProblem(422,"SOURCE_TOO_LONG","词条快照超出长度限制");
             UUID favorite=UUID.randomUUID();
@@ -152,31 +131,31 @@ public class FavoriteService {
             word=db.lemma(user,lemma,true);
         }
         UUID favorite=id(word,"id");
-        if(body.favoriteId()!=null && !body.favoriteId().equals(favorite)) throw missing();
-        byte[] key=ContextKey.of(book.getOriginKey(),source);
-        var context=db.context(favorite,key);
-        boolean createdContext=context==null;
-        UUID contextId=context==null?UUID.randomUUID():id(context,"id");
-        if(context==null) db.insertContext(bytes(contextId),bytes(favorite),bytes(bookId),bytes(chapter.getId()),bytes(book.getOriginKey()),book.getSourceHash(),artifact.getArtifactHash(),source.pipelineVersion(),key,
-            source.spineHref(),source.blockId(),source.sentenceStart(),source.sentenceEnd(),source.contextKind(),source.sentence(),source.surface(),source.wordStart(),source.wordEnd(),
-            source.wordRangeCfi(),source.sentenceRangeCfi(),source.quote().prefix(),source.quote().suffix(),book.getTitle(),chapter.getTitle()==null?source.spineHref():chapter.getTitle(),java.sql.Timestamp.from(now));
-        var result=new Saved(favorite,contextId,lemma,"CONTEXT",createdWord,createdContext,db.count(favorite),"active");
+        if(createdWord) {
+            db.insertExample(bytes(UUID.randomUUID()),bytes(favorite),source.contextKind(),source.sentence(),source.surface(),
+                source.wordStart(),source.wordEnd(),book.getTitle(),java.sql.Timestamp.from(now));
+        }
+        var result=new Saved(favorite,lemma,"FAVORITED",createdWord,"active");
         if(previous!=null) db.expireReceipt(bytes(user),bytes(request));
-        db.insertReceipt(bytes(user),bytes(request),hash,bytes(favorite),bytes(contextId),DictionaryJson.json(result),java.sql.Timestamp.from(now.plusSeconds(86400)),java.sql.Timestamp.from(now));
+        db.insertReceipt(bytes(user),bytes(request),hash,bytes(favorite),DictionaryJson.json(result),
+            java.sql.Timestamp.from(now.plusSeconds(86400)),java.sql.Timestamp.from(now));
         return result;
     }
+
     private Map<String,Object> receipt(UUID user,UUID request) {
         return db.receipt(bytes(user),bytes(request));
     }
+
     private Saved replay(UUID user,byte[] hash,Map<String,Object> receipt) {
         if(!MessageDigest.isEqual(hash,(byte[])receipt.get("request_hash"))) throw new ApiProblem(409,"IDEMPOTENCY_KEY_REUSED","请求编号已用于其他收藏");
         UUID favorite=id(receipt,"favorite_id");
         var word=db.word(user,favorite,false);
         var json=DictionaryJson.parse(text(receipt,"result_json"));
         boolean active=word!=null;
-        return new Saved(favorite,id(receipt,"context_id"),json.path("lemmaKey").asString(),active?"CONTEXT":"NONE",false,false,
-                active?db.count(favorite):0,active?"active":"deleted");
+        return new Saved(favorite,json.path("lemmaKey").asString(),active?"FAVORITED":"NOT_FAVORITED",false,
+                active?"active":"deleted");
     }
+
     public void delete(UUID user,UUID favorite) {
         tx.executeWithoutResult(status -> {
             var word=db.word(user,favorite,true);
@@ -188,6 +167,7 @@ public class FavoriteService {
             db.markDeleted(bytes(user),bytes(favorite));
         });
     }
+
     static String normalize(String value) {
         try { return DictionaryJson.normalize(value); }
         catch(RuntimeException error) { return ""; }

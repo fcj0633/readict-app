@@ -23,13 +23,14 @@ export interface Pronunciation {
 }
 
 export interface DictionarySense {
-  senseId: string; pos: string; zh: string; labels: string[]; providerOrder: number;
+  senseId: string; pos: string; rawPos: string | null; zh: string; labels: string[]; providerOrder: number;
 }
 
 export interface Phonetic { ipa: string; accent: string }
 
 export interface LookupRegion {
   entryId: string; headword: string; lemma: string; lemmaKey: string;
+  sourceOrdinal: number; sectionOrder: number; componentOrder: number;
   phonetics: Phonetic[]; senses: DictionarySense[]; pronunciations: Pronunciation | null;
   raw: Record<string, unknown>;
 }
@@ -92,7 +93,7 @@ function decodeSource(value: unknown): LookupSource {
   };
 }
 
-function decodePronunciation(value: unknown): Pronunciation | null {
+export function decodePronunciation(value: unknown): Pronunciation | null {
   if (value === null || value === undefined) return null;
   if (!object(value)) invalid();
   return {
@@ -107,13 +108,23 @@ function decodePronunciation(value: unknown): Pronunciation | null {
   };
 }
 
+function sourceOrdinal(entryKey: unknown): number {
+  if (typeof entryKey !== 'string') return 0;
+  const match = /^s(\d+):/.exec(entryKey);
+  return match ? Number(match[1]) : 0;
+}
+
 function decodeRegion(value: unknown): LookupRegion {
   if (!object(value)) invalid();
   const headword = text(value.headword, 128);
+  const entryKey = typeof value.entryKey === 'string' ? text(value.entryKey, 160) : '';
   return {
     entryId: text(value.entryId, 64), headword,
     lemma: typeof value.lemma === 'string' ? text(value.lemma, 128) : headword,
     lemmaKey: typeof value.lemmaKey === 'string' ? text(value.lemmaKey, 128) : headword,
+    sourceOrdinal: typeof value.sourceOrdinal === 'number' ? integer(value.sourceOrdinal) : sourceOrdinal(entryKey),
+    sectionOrder: typeof value.sectionOrder === 'number' ? integer(value.sectionOrder) : 0,
+    componentOrder: typeof value.componentOrder === 'number' ? integer(value.componentOrder) : 0,
     phonetics: array(value.phonetics ?? []).map(item => {
       if (!object(item)) invalid();
       return { ipa: typeof item.ipa === 'string' ? item.ipa : '', accent: typeof item.accent === 'string' ? item.accent : '' };
@@ -122,6 +133,7 @@ function decodeRegion(value: unknown): LookupRegion {
       if (!object(item)) invalid();
       return {
         senseId: typeof item.senseId === 'string' ? item.senseId : '', pos: typeof item.pos === 'string' ? item.pos : 'unknown',
+        rawPos: typeof item.rawPos === 'string' && item.rawPos ? item.rawPos : null,
         zh: text(item.zh, 10000), labels: array(item.labels ?? []).filter(label => typeof label === 'string') as string[],
         providerOrder: typeof item.providerOrder === 'number' ? item.providerOrder : 0,
       };

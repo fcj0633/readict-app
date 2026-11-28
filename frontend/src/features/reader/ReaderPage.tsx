@@ -15,15 +15,13 @@ import type {
 import { ProgressSaver, type ProgressState } from './progress/model';
 import { ContentsPanel, SettingsPanel } from './ReaderPanels';
 import { ReaderPaperHeading, ReaderRail, ReaderTopbar, SaveStatus, type ReaderPanelName } from './ReaderLayout';
-import type { TextSelection, SelectionRect } from './engine/selection';
+import type { TextSelection } from './engine/selection';
 import { lookupWord } from '../dictionary/api';
 import type { LookupViewState } from '../dictionary/model';
 import { DictionaryCard } from '../dictionary/DictionaryCard';
 import { PronunciationPlayer, type PlaybackState } from '../dictionary/PronunciationPlayer';
 import { findTocLabel, groupToc, sameChapter } from './toc';
 import './reader.css';
-import { favoriteApi } from '../favorites/api';
-import { favoriteTarget, type FavoriteContext } from '../favorites/model';
 
 const EMPTY_PROGRESS: ProgressState = { status: 'idle', version: 0, anchor: null, ratio: 0, dirty: false };
 
@@ -53,7 +51,7 @@ export default function ReaderPage() {
   const { bookId = '' } = useParams();
   const auth = useAuth();
   const navigate = useNavigate();
-  const { search: favoriteSearch, state: navigationState } = useLocation();
+  const { state: navigationState } = useLocation();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<EpubJsEngine | null>(null);
   const saverRef = useRef<ProgressSaver | null>(null);
@@ -71,7 +69,6 @@ export default function ReaderPage() {
   const [title, setTitle] = useState('阅读');
   const [spineHref, setSpineHref] = useState<string | null>(null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
-  const [favoriteHighlight, setFavoriteHighlight] = useState<SelectionRect | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [page, setPage] = useState({ page: 0, total: 0 });
   const [boundary, setBoundary] = useState({ atStart: true, atEnd: false });
@@ -108,7 +105,7 @@ export default function ReaderPage() {
     let engine: EpubJsEngine | null = null;
     let saver: ProgressSaver | null = null;
     enterPhase('loading');
-    setError(null); setNotice(null); setFavoriteHighlight(null); setManifest(null); setProgress(EMPTY_PROGRESS);
+    setError(null); setNotice(null); setManifest(null); setProgress(EMPTY_PROGRESS);
     setPanel('none'); setSpineHref(null);
     closeLookup();
 
@@ -142,7 +139,6 @@ export default function ReaderPage() {
         engineRef.current = engine;
         cleanups.push(engine.subscribe(event => {
           if (event.type === 'relocated') {
-            setFavoriteHighlight(null);
             setPage({ page: event.page, total: event.totalPages });
             setBoundary({ atStart: event.atStart, atEnd: event.atEnd });
             setSpineHref(event.spineHref || null);
@@ -153,14 +149,14 @@ export default function ReaderPage() {
               saverRef.current?.update(event.anchor);
             }
           } else if (event.type === 'selection') {
-            setFavoriteHighlight(null);
             if (event.selection) startLookup(event.selection);
             else if (event.error) {
               closeLookup();
               setNotice('当前位置无法精确查词，请翻页后重试');
+            } else {
+              closeLookup();
             }
           } else if (event.type === 'resized') {
-            setFavoriteHighlight(null);
             if (engine) syncDisplayedPage(engine);
             closeLookup();
           } else if (event.type === 'error') {
@@ -178,28 +174,12 @@ export default function ReaderPage() {
         }
         enterPhase('restoring');
         const returnAnchor = (navigationState as { returnAnchor?: ReadingAnchor } | null)?.returnAnchor;
-        let anchor = returnAnchor?.artifactId === loaded.artifactId && returnAnchor.artifactHash === loaded.artifactHash
+        const anchor = returnAnchor?.artifactId === loaded.artifactId && returnAnchor.artifactHash === loaded.artifactHash
           && returnAnchor.pipelineVersion === loaded.pipelineVersion ? returnAnchor : fetched.progress?.anchor ?? firstAnchor(loaded);
-        let favoriteAccepted = false;
-        let favoriteContext: FavoriteContext | undefined;
-        const target = favoriteTarget(favoriteSearch);
-        if (target) {
-          try {
-            const detail = await favoriteApi.detail(target.favoriteId, controller.signal);
-            const context = detail.contexts.find(c => c.contextId === target.contextId);
-            const a = context?.anchor;
-            if (!context?.sourceAvailable || context.bookId !== bookId || !a
-              || a.artifactId !== loaded.artifactId || a.artifactHash !== loaded.artifactHash || a.pipelineVersion !== loaded.pipelineVersion) {
-              setNotice('收藏来源已不可用，已恢复阅读进度');
-            } else { anchor = a; favoriteAccepted = true; favoriteContext = context; }
-          } catch (e) { if (controller.signal.aborted) return; setNotice(e instanceof Error ? e.message : '收藏位置不可用，已恢复阅读进度'); }
-        }
         if (anchor) {
           const result = await engine.display(anchor);
-          if (result === 'quote-fallback') setNotice(favoriteAccepted ? '已核验原句并恢复收藏位置' : '已按文本匹配恢复上次位置');
-          else if (favoriteAccepted && result === 'restored') setNotice('已核验并恢复收藏原文');
-          else if (result === 'chapter-start' && (fetched.progress || target)) setNotice('位置无法唯一恢复，已回到本章开头');
-          if (favoriteContext && result !== 'chapter-start') setFavoriteHighlight(await engine.favoriteSelection(anchor, favoriteContext.wordStart, favoriteContext.wordEnd));
+          if (result === 'quote-fallback') setNotice('已按文本匹配恢复上次位置');
+          else if (result === 'chapter-start' && fetched.progress) setNotice('位置无法唯一恢复，已回到本章开头');
         }
         lastAnchor.current = engine.anchor()?.cfi ?? null;
         readyAt.current = Date.now();
@@ -227,7 +207,7 @@ export default function ReaderPage() {
       void engine?.destroy();
       enterPhase('idle');
     };
-  }, [bookId, favoriteSearch, navigationState, auth.user?.id, reloadToken, enterPhase, syncDisplayedPage]);
+  }, [bookId, navigationState, auth.user?.id, reloadToken, enterPhase, syncDisplayedPage]);
 
   const effectivePreferences = shared.origin === `reader:${bookId}` ? settingsState.draft : settingsState.committed && settingsState.committed.version >= (manifest?.settingsVersion ?? 0) ? settingsState.committed.preferences : undefined;
   useEffect(() => {
@@ -261,6 +241,17 @@ export default function ReaderPage() {
     return () => window.removeEventListener('resize', close);
   }, []);
 
+  useEffect(() => {
+    if (!lookup) return;
+    const outside = (event: PointerEvent) => {
+      const path = event.composedPath();
+      if (path.some(node => node instanceof Element && node.closest('.dictionary-card'))) return;
+      closeLookup();
+    };
+    document.addEventListener('pointerdown', outside, true);
+    return () => document.removeEventListener('pointerdown', outside, true);
+  }, [lookup]);
+
   function getPlayer(): PronunciationPlayer {
     if (!playerRef.current) playerRef.current = new PronunciationPlayer(setPlayback);
     return playerRef.current;
@@ -271,6 +262,7 @@ export default function ReaderPage() {
     lookupAbortRef.current = null;
     lookupIdRef.current++;
     lookupOpenRef.current = false;
+    engineRef.current?.invalidateSelection();
     playerRef.current?.stop();
     setLookup(null);
     setActiveRegion(0);
@@ -433,9 +425,6 @@ export default function ReaderPage() {
               </div>}
       </>}
 
-      {favoriteHighlight && !lookup && <span className="reader-word-highlight" data-testid="favorite-target-highlight" aria-hidden="true" style={{
-        left: favoriteHighlight.left, top: favoriteHighlight.top, width: favoriteHighlight.width, height: favoriteHighlight.height,
-      }} />}
       {lookup && <>
         <span className="reader-word-highlight" aria-hidden="true" style={{
           left: lookup.selection.rect.left, top: lookup.selection.rect.top,

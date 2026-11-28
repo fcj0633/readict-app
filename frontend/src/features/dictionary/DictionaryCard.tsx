@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { Check, ChevronDown, Loader2, Volume2, X } from 'lucide-react';
+import { ChevronDown, Loader2, Volume2, X } from 'lucide-react';
 import { placeCard } from '../reader/preview/position';
 import type { TextSelection } from '../reader/engine/selection';
 import type { LookupRegion, LookupViewState } from './model';
+import { activeLemma, candidateGroups, groupSenses } from './sense-groups';
+import { SenseGroups } from './SenseGroups';
 import { FavoriteButton } from '../favorites/FavoriteButton';
 import '../favorites/favorites.css';
 import type { PlaybackState } from './PronunciationPlayer';
@@ -34,17 +36,12 @@ function accentLabel(accent: string, word: string): string {
   return `${word} 发音`;
 }
 
-function regionLabel(region: LookupRegion): string {
-  return region.lemma || region.headword;
+function sameWord(a: string, b: string): boolean {
+  return a.normalize('NFC').toLowerCase() === b.normalize('NFC').toLowerCase();
 }
 
-function candidateGroups(regions: LookupRegion[]): { label: string; index: number }[] {
-  const groups = new Map<string, number>();
-  regions.forEach((region, index) => {
-    const label = regionLabel(region);
-    if (!groups.has(label)) groups.set(label, index);
-  });
-  return Array.from(groups, ([label, index]) => ({ label, index }));
+function displayLemma(region: LookupRegion | undefined, surface: string): string {
+  return region?.lemma || region?.headword || surface;
 }
 
 export function DictionaryCard({ bookId, selection, state, activeRegion, playback, onRegion, onRetry, onPlay, onClose }: Props) {
@@ -52,46 +49,45 @@ export function DictionaryCard({ bookId, selection, state, activeRegion, playbac
   const [style, setStyle] = useState<CSSProperties>({ visibility: 'hidden' });
   const [expanded, setExpanded] = useState(false);
 
-  useEffect(() => { setExpanded(false); }, [selection, state.data]);
+  useEffect(() => { setExpanded(false); }, [selection]);
 
+  // One position per selection. Expanding, changing candidates or favorite state must never
+  // remeasure: the card grows inside its fixed top/left and bounded scroll area.
   useLayoutEffect(() => {
-    const measure = () => {
-      const card = cardRef.current;
-      if (!card) return;
-      const rect = card.getBoundingClientRect();
-      const placement = placeCard(selection.rect, { width: rect.width, height: rect.height },
-        { width: window.innerWidth, height: window.innerHeight });
-      setStyle({ left: placement.left, top: placement.top, maxHeight: placement.maxHeight, visibility: 'visible' });
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [selection, state.data, state.phase, activeRegion, expanded]);
+    const card = cardRef.current;
+    if (!card) return;
+    const rect = card.getBoundingClientRect();
+    const placement = placeCard(selection.rect, { width: rect.width, height: rect.height },
+      { width: window.innerWidth, height: window.innerHeight });
+    setStyle({ left: placement.left, top: placement.top, maxHeight: placement.maxHeight, visibility: 'visible' });
+  }, [selection]);
 
   const data = state.data;
-  const region = data ? (data.regions[activeRegion] ?? data.entry ?? data.regions[0]) : undefined;
+  const regions = data ? (data.regions.length ? data.regions : data.entry ? [data.entry] : []) : [];
+  const region = activeLemma(regions, activeRegion) ?? data?.entry ?? undefined;
+  const lemma = displayLemma(region, selection.source.surface);
   const phonetic = region?.phonetics.find(item => item.ipa)?.ipa;
-  const senses = region?.senses ?? [];
-  const visibleSenses = senses.slice(0, 3);
-  const moreSenses = senses.slice(3);
+  const groups = groupSenses(regions, activeRegion);
+  const visibleGroups = groups.slice(0, 3);
+  const moreGroups = groups.slice(3);
+  const candidates = candidateGroups(regions);
+  const selectedLemmaKey = region?.lemmaKey;
   const audio = region?.pronunciations;
   const context = contextText(selection);
   const playable = audio?.items ?? [];
-  const candidates = data ? candidateGroups(data.regions) : [];
+  const primarySenseId = groups[0]?.senseId;
+  const showSurface = !sameWord(selection.source.surface, lemma);
 
   return <section ref={cardRef} className="dictionary-preview dictionary-card" style={style}
-    role="dialog" aria-label={region ? `查询 ${region.headword}` : '查词'} data-testid="dictionary-card">
+    role="dialog" aria-label={region ? `查询 ${lemma}` : '查词'} data-testid="dictionary-card">
     <div className="dictionary-preview-head">
       <div>
-        <span className="dictionary-preview-badge">M05 · 真实 COL 词典</span>
+        <span className="dictionary-preview-badge">COL 词典</span>
         <div className="dictionary-word-row">
-          <h2>{region?.headword ?? selection.source.surface}</h2>
+          <h2>{lemma}</h2>
           {phonetic && <span className="dictionary-inline-ipa">{phonetic}</span>}
         </div>
-        <p className="dictionary-meta">
-          <span>原文词形：{selection.source.surface}</span>
-          {region && region.headword !== selection.source.surface && <span>词头：{region.headword}</span>}
-        </p>
+        {showSurface && <p className="dictionary-meta"><span>原文词形：{selection.source.surface}</span></p>}
       </div>
       <button type="button" className="reader-icon-button" aria-label="关闭词典卡片" onClick={onClose}>
         <X size={16} aria-hidden="true" />
@@ -102,7 +98,8 @@ export function DictionaryCard({ bookId, selection, state, activeRegion, playbac
       <Loader2 size={16} className="dictionary-spin" aria-hidden="true" />正在查询…
     </div>}
 
-    {(state.phase === 'error' || data?.status === 'NOT_FOUND' || data?.status === 'UNSUPPORTED_QUERY') && <FavoriteButton key={selection.source.wordRangeCfi} bookId={bookId} source={selection.source} lemma={selection.source.surface} />}
+    {(state.phase === 'error' || data?.status === 'NOT_FOUND' || data?.status === 'UNSUPPORTED_QUERY') &&
+      <FavoriteButton key={`${selection.source.wordRangeCfi}:state-source`} bookId={bookId} source={selection.source} lemma={selection.source.surface} />}
 
     {state.phase === 'error' && <div className="dictionary-error" role="alert">
       <p>{state.message ?? '查词暂时不可用。'}</p>
@@ -120,29 +117,21 @@ export function DictionaryCard({ bookId, selection, state, activeRegion, playbac
       </div>}
       {(data.status === 'FOUND' || data.status === 'AMBIGUOUS') && region && <>
         {candidates.length > 1 && <div className="dictionary-candidates" aria-label="词条候选">
-          {candidates.map(candidate => <button key={candidate.label} type="button"
-            className={`dictionary-candidate${candidate.index === activeRegion ? ' active' : ''}`}
-            aria-pressed={candidate.index === activeRegion} onClick={() => onRegion(candidate.index)}>
+          {candidates.map(candidate => <button key={candidate.key} type="button"
+            className={`dictionary-candidate${candidate.key === selectedLemmaKey ? ' active' : ''}`}
+            aria-pressed={candidate.key === selectedLemmaKey} onClick={() => onRegion(candidate.index)}>
             {candidate.label}
           </button>)}
         </div>}
 
-        <div className="dictionary-senses">
-          {visibleSenses.map((sense, index) => <div className="dictionary-sense" key={`${sense.senseId}-${index}`}>
-            <span>{sense.pos}</span>
-            <p>{sense.zh}</p>
-          </div>)}
-        </div>
-        {moreSenses.length > 0 && <div className="dictionary-more">
-          <button type="button" className="dictionary-more-button" onClick={() => setExpanded(value => !value)}>
-            {expanded ? '收起更多释义' : `更多释义（${moreSenses.length}）`}
+        <SenseGroups groups={visibleGroups} />
+        {moreGroups.length > 0 && <div className="dictionary-more">
+          <button type="button" className="dictionary-more-button" aria-expanded={expanded}
+            onClick={() => setExpanded(value => !value)}>
+            {expanded ? '收起更多释义' : `更多释义（${moreGroups.length}）`}
             <ChevronDown size={14} className={expanded ? 'dictionary-rotate' : ''} aria-hidden="true" />
           </button>
-          {expanded && <div className="dictionary-senses">
-            {moreSenses.map((sense, index) => <div className="dictionary-sense" key={`${sense.senseId}-more-${index}`}>
-              <span>{sense.pos}</span><p>{sense.zh}</p>
-            </div>)}
-          </div>}
+          {expanded && <SenseGroups groups={moreGroups} />}
         </div>}
 
         <div className="dictionary-context">
@@ -157,19 +146,19 @@ export function DictionaryCard({ bookId, selection, state, activeRegion, playbac
             : playable.map(item => {
               const active = playback.audioId === item.audioId && (playback.status === 'loading' || playback.status === 'playing');
               return <button key={item.audioId} type="button" className={`dictionary-audio-button${active ? ' active' : ''}`}
-                onClick={() => onPlay(item.audioId)} title={accentLabel(item.accent, audio?.word ?? region.headword)}>
+                onClick={() => onPlay(item.audioId)} title={accentLabel(item.accent, audio?.word ?? lemma)}>
                 {active ? <Loader2 size={14} className="dictionary-spin" aria-hidden="true" /> : <Volume2 size={14} aria-hidden="true" />}
-                {accentLabel(item.accent, audio?.word ?? region.headword)}
+                {accentLabel(item.accent, audio?.word ?? lemma)}
               </button>;
             })}
           {playback.status === 'error' && playback.audioId && <span>播放失败，请重试</span>}
         </div>
 
         <div className="dictionary-actions">
-          {data.lookupId && senses[0]?.senseId ? <FavoriteButton key={`${data.lookupId}:${senses[0].senseId}`}
-            lookupId={data.lookupId} senseId={senses[0].senseId} source={data.source} lemma={region.lemma} />
+          {data.lookupId && primarySenseId
+            ? <FavoriteButton key={`${data.lookupId}:${primarySenseId}`} lookupId={data.lookupId} senseId={primarySenseId}
+                source={data.source} lemma={lemma} bookId={bookId} />
             : <span>词条未确认，暂不可收藏</span>}
-          {data.resolvedLemmaKey && <span className="dictionary-lemma"><Check size={12} aria-hidden="true" />{data.resolvedLemmaKey}</span>}
         </div>
       </>}
     </>}

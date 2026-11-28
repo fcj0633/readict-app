@@ -10,7 +10,7 @@
 
 书架与收藏为一级导航；头像菜单提供个人账户、阅读设置和真实退出。根路径跳转 `/books`，服务诊断保留在 `/status`，旧 `/settings` 跳转 `/settings/reading`，阅读器仍为独立布局。昵称、头像上传及联系方式绑定/换绑未开放，不提供词典与发音设置页面；真实查词与现有录音播放保留。
 
-阅读设置五项自动保存，设置页与阅读器共用用户作用域协调器；夜读仅影响阅读纸面和预览。完整设置请求保留既有 pronunciation。书架支持真实游标分页、跨页续读选择、25 MiB 上传及未知结果原幂等键重试。收藏回原文使用句子 CFI 与原句核验，无数据库迁移。
+阅读设置五项自动保存，设置页与阅读器共用用户作用域协调器；夜读仅影响阅读纸面和预览。完整设置请求保留既有 pronunciation。书架支持真实游标分页、跨页续读选择、25 MiB 上传及未知结果原幂等键重试。
 
 运行命令与端口不变。实现、测试环境、截图及已知限制见 [UX-U03 实施记录](../readict-design/validation/implementation/ux-u03/2026-11-28/README.md)。本机自动检查完成情况以记录为准，最终视觉待人工确认。既有 EPUB.js/xmldom 依赖审计问题单列，未自动升级阅读引擎。
 
@@ -132,7 +132,7 @@ java -jar $readictTool audio-activate --dataset <音频数据集UUID> --expected
 
 ## M03 本机书籍导入与书架
 
-范围：私有存储、有界上传、EPUB 解析与清洗、确定性阅读产物与文本索引、导入任务、书架 API 与前端书架页。阅读器与进度、点词查词和收藏已由 M04～M06 接入；M07 翻译、M08 清理巡检、M09 阶段验收仍未开发。
+范围：私有存储、有界上传、EPUB 解析与清洗、确定性阅读产物与文本索引、导入任务、书架 API 与前端书架页。阅读器与进度、点词查词和收藏已由 M04～M05／CR-0006 接入；M07 翻译、M08 清理巡检、M09 阶段验收仍未开发。
 
 环境：书籍私有根目录用 `READICT_BOOK_STORAGE_ROOT`，末级目录名必须为 `readict_test`／`readict_dev`，未配置时书籍接口返回 503，其他模块不受影响。上传上限 25 MiB；`spring.servlet.multipart` 已在 `application.yml` 设为 26 MB／28 MB 并由业务再校验。V7 已在 `readict_test` 与 `readict_dev` 执行（开发库于 2026-11-23 经用户批准执行：首次迁移 1 个、二次启动 0 个，既有词典／音频计数不变）。
 
@@ -151,7 +151,7 @@ mvn -Pmysql-it verify
 限制与未验收项：前端书架页已用 Edge（headless）完成一次自动截图检查（空态、导入进度、完成态、删除确认、390px 单列，截图见实施记录），人工确认仍建议；A03（无封面/无目录）、A05（条目与总量预算）、A07（DTD/XXE）、A11（崩溃接管）、A12（发布后 DB 失败）已有单测或集成覆盖；真实 EPUB、V03 全量恶意矩阵与 M08 清理执行仍待办，详见设计仓库 [M03 实施记录](../readict-design/validation/implementation/m03/2026-11-23-local/README.md)。`artifactId` 下载不支持 Range；阅读器已由 M04 接入，书架“打开”进入真实阅读页。
 ## M04 本机阅读内核与进度
 
-范围：`/reader/:bookId` 阅读页、epub.js 单页分页、CFI＋quote 恢复、进度保存与冲突、V8 `reading_progress`、`GET/PUT /api/v1/books/{id}/progress` 与书架进度联动。M05 点词查词与 M06 收藏已接入；M07 翻译仍未开发。
+范围：`/reader/:bookId` 阅读页、epub.js 单页分页、CFI＋quote 恢复、进度保存与冲突、V8 `reading_progress`、`GET/PUT /api/v1/books/{id}/progress` 与书架进度联动。M05 点词查词与 CR-0006 收藏已接入；M07 翻译仍未开发。
 
 环境：V8 已在 `readict_test` 与 `readict_dev` 执行；dev 于 2026-11-23 经用户批准，首次 1 个、二次启动 0 个迁移，既有词典／音频计数不变。前端依赖 `epubjs@0.3.93`（BSD-2-Clause，包自带 TypeScript 类型），执行 `npm ci` 后生效。
 
@@ -161,17 +161,17 @@ mvn -Pmysql-it verify
 
 验证：`mvn test` 102 通过；`mvn -Pmysql-it verify` 56 通过（新增 `ReadingProgressIT` 4 项，V8 首次迁移成功、二次启动 0 迁移）；`npm run lint` 0 警告、`npm test` 39 通过、`npm run build` 通过；Edge headless 实跑阅读页（打开、翻页、字号 24、刷新恢复、390px 无横向溢出）见设计仓库 [M04 实施记录](../readict-design/validation/implementation/m04/2026-11-23-local/README.md)。
 
-限制：仅对 Edge/Chromium 给出证据，Firefox/Safari 明确暂不支持；真实大书、跨版式精确恢复、内存／Blob 长期观察未验证；阅读页右栏“收藏”已由 M06 接入；产物下载不支持 Range；阅读页不套用账号页布局。
+限制：仅对 Edge/Chromium 给出证据，Firefox/Safari 明确暂不支持；真实大书、跨版式精确恢复、内存／Blob 长期观察未验证；阅读页右栏“收藏”已由 CR-0006 接入；产物下载不支持 Range；阅读页不套用账号页布局。
 
 
-## M06 收藏、快照与回看
+## CR-0006 查词卡片与单词收藏
 
-阅读时点词可收藏单词及当前原句；同一 lemma 共用主体，不同位置追加语境。卡片显示“收藏／收藏本句／已收藏”，取消时确认删除该单词及全部语境。`/favorites` 提供单词／句子视图、搜索、来源筛选、排序、分页、详情和回原文；阅读器和账号导航均有入口。
+查词卡片按 COL 原生 sense 组显示 `rawPos` 与完整中文释义，默认三组、更多释义在固定位置的卡片内向下展开并内部滚动；标题使用 lemma，仅真实词形变化显示原文词形。点击父页面或 EPUB iframe 空白关闭，卡内操作、Esc、X 保留。
 
-后端使用 Repository → MyBatis Mapper/XML 与同一 Spring 事务，首次词义快照来自查词时的 receipt，后续收藏不覆盖。保存需 `Idempotency-Key`，响应丢失沿用原编号重试；取消后旧保存回执返回 deleted。删除书籍在原事务中解绑收藏来源，保留书名、章节名和原句；来源不可用时不提供原文锚点。
+收藏为两态：未收藏／已收藏；首次收藏只保存当前经来源校验的一句附属例句，跨书／跨句再次遇到同 lemma 不追加、不覆盖首义快照；再次点击直接取消整个单词及附属例句，无二次确认。`/favorites` 为紧凑单词列表，最多三组（窄屏两组）释义、真实音标、独立发音、详情和直接取消；详情显示完整真实释义、全部历史附属例句和静态书名，不提供原文跳转、句子视图或语境计数。
 
-接口：`GET /api/v1/favorites`、`/state`、`/sources`、`/stats`、`/{id}`，`POST /favorites`，`DELETE /favorites/{id}`；词典不可用时已有收藏可通过 `POST /favorites/state-source` 确认原文归属，再以 favoriteId 追加。所有接口需要 Session，变更需 CSRF，响应 no-store。
+接口：`GET /api/v1/favorites`（仅 `view=words`）、`/state`、`/stats`、`/sources`、`/{id}`、`/{id}/pronunciations`，`POST /favorites`，`DELETE /favorites/{id}`；`POST /favorites/state-source` 仅用于词典不可用时可靠识别已有主体。保存需 `Idempotency-Key`，旧回执重放不复活已取消收藏。所有接口需要 Session，变更需 CSRF，响应 no-store。
 
-V9 新增 3 表，测试库共 26 表；V1～V8 保持原样。本次仅迁移 `readict_test`，开发库 V9 须另行批准后启用新版本。真实数据库测试用 `mvn -Pmysql-it verify`；普通 `mvn test` 不连接数据库。测试上下文默认不接收本地书籍存储配置，各集成类独立配置并在结束时关闭任务消费者。
+V10 将 `favorite_word_context` 定位列删除，仅保留句子、词面、句内偏移、书名快照和翻译占位；历史主体、例句、书名、偏移与回执保留。V1～V9 不修改；本次只迁移 `readict_test`（首次 V10 成功），`readict_dev` 仍为 V9，未经批准不迁移。真实数据库测试用 `mvn -Pmysql-it verify`；普通 `mvn test` 不连接数据库。
 
-详细实现、并发与回滚验证、浏览器截图及实际限制见 [M06 实施与验证记录](../readict-design/validation/implementation/m06/2026-11-25-local/README.md)。翻译字段保留为空，复习、导出、分享和跨浏览器支持不在本轮范围。
+登录、注册、找回密码默认手机号且手机号在第一位；邮箱切换、+86 规范化、密码和恢复契约不变。详细记录见 [CR-0006 验证记录](../readict-design/validation/implementation/cr-0006/2026-11-28/README.md)。
