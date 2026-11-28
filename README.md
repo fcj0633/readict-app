@@ -6,6 +6,14 @@
 
 设计与详细记录统一放在平级设计仓库：[系统设计](../readict-design/docs/technical/architecture/Readict-V1.1-系统技术设计.md)、[M00 执行指导](../readict-design/docs/technical/implementation/M00-工程基础与本机环境执行文档.md)、[M00 验收记录](../readict-design/validation/implementation/m00/README.md)。M01 见 [执行指导](../readict-design/docs/technical/implementation/M01-用户认证与个人设置执行文档.md) 和 [验收记录](../readict-design/validation/implementation/m01/README.md)。这些文档不参与应用运行。
 
+## UX-U03 正式前端融合
+
+书架与收藏为一级导航；头像菜单提供个人账户、阅读设置和真实退出。根路径跳转 `/books`，服务诊断保留在 `/status`，旧 `/settings` 跳转 `/settings/reading`，阅读器仍为独立布局。昵称、头像上传及联系方式绑定/换绑未开放，不提供词典与发音设置页面；真实查词与现有录音播放保留。
+
+阅读设置五项自动保存，设置页与阅读器共用用户作用域协调器；夜读仅影响阅读纸面和预览。完整设置请求保留既有 pronunciation。书架支持真实游标分页、跨页续读选择、25 MiB 上传及未知结果原幂等键重试。收藏回原文使用句子 CFI 与原句核验，无数据库迁移。
+
+运行命令与端口不变。实现、测试环境、截图及已知限制见 [UX-U03 实施记录](../readict-design/validation/implementation/ux-u03/2026-11-28/README.md)。本机自动检查完成情况以记录为准，最终视觉待人工确认。既有 EPUB.js/xmldom 依赖审计问题单列，未自动升级阅读引擎。
+
 ## 工程与环境
 
 - `backend/`：Java 21、Spring Boot 4.1.2、MP Boot 4 Starter 3.5.18；包含迁移和正式测试。
@@ -66,7 +74,7 @@ npm ci
 npm run dev
 ```
 
-打开 [本机状态页](http://127.0.0.1:5173/)、[注册页](http://127.0.0.1:5173/register) 或 [登录页](http://127.0.0.1:5173/login)。手机号固定 +86，接受 11 位或 +86 完整号码；不支持其他地区。前后端只监听 127.0.0.1，端口为 5173／8080，占用即失败；Vite 保留 `/api` 路径代理到后端。各终端按 Ctrl+C 停止；若提示终止批处理，输入 Y。不停止共享 MySQL 或其他进程。
+打开 [书架](http://127.0.0.1:5173/books)、[本机状态页](http://127.0.0.1:5173/status)、[注册页](http://127.0.0.1:5173/register) 或 [登录页](http://127.0.0.1:5173/login)。手机号固定 +86，接受 11 位或 +86 完整号码；不支持其他地区。前后端只监听 127.0.0.1，端口为 5173／8080，占用即失败；Vite 保留 `/api` 路径代理到后端。各终端按 Ctrl+C 停止；若提示终止批处理，输入 Y。不停止共享 MySQL 或其他进程。
 
 状态接口：`GET /api/v1/system/status`；健康检查：`GET /actuator/health/liveness`、`GET /actuator/health/readiness`。状态接口真实查询基线行；运行期依赖故障返回 503 Problem Details，启动前故障导致启动失败。认证接口位于 `/api/v1/auth`，个人设置位于 `/api/v1/me/settings`；变更接口保留 CSRF，账号／设置需要 Session 身份。注册不自动登录，退出和改密返回 204；Session 空闲 30 分钟、绝对 7 天，改密／重置使全部旧会话失效。
 

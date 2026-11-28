@@ -62,7 +62,7 @@ public class FavoriteQueries {
     }
     private Map<String,Object> context(Map<String,Object> r) {
         boolean available=truth(r.get("available"));
-        Object anchor=available?map("artifactId",id(r,"active_artifact_id"),"artifactHash",HexFormat.of().formatHex((byte[])r.get("artifact_hash")),"pipelineVersion",text(r,"pipeline_version"),"spineHref",text(r,"spine_href"),"cfi",text(r,"word_range_cfi"),"blockId",text(r,"block_id"),"blockOffset",r.get("sentence_start"),
+        Object anchor=available?map("artifactId",id(r,"active_artifact_id"),"artifactHash",HexFormat.of().formatHex((byte[])r.get("artifact_hash")),"pipelineVersion",text(r,"pipeline_version"),"spineHref",text(r,"spine_href"),"cfi",text(r,"sentence_range_cfi"),"blockId",text(r,"block_id"),"blockOffset",r.get("sentence_start"),
                 "quote",map("exact",text(r,"sentence_snapshot"),"prefix",text(r,"quote_prefix"),"suffix",text(r,"quote_suffix"))):null;
         return map("contextId",id(r,"id"),"favoriteId",id(r,"favorite_word_id"),"lemma",text(r,"lemma"),"sentence",text(r,"sentence_snapshot"),"surface",text(r,"surface_snapshot"),"wordStart",r.get("word_start"),"wordEnd",r.get("word_end"),"bookTitle",text(r,"book_title_snapshot"),"chapterTitle",text(r,"chapter_title_snapshot"),"sourceKey",id(r,"origin_key"),"sourceAvailable",available,"bookId",id(r,"book_id"),"anchor",anchor,"translation",text(r,"translation_snapshot"),"createdAt",time(r,"created_at"));
     }

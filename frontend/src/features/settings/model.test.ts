@@ -33,3 +33,21 @@ test('disposed requests cannot publish late results', async () => {
   const saver = new PreferenceSaver(() => emits++, { get: () => new Promise<View>(resolve => { done = resolve; }), save: async body => ({ preferences: body.preferences, version: 2 }) });
   const pending = saver.load(); saver.dispose(); done({ preferences: prefs, version: 1 }); await pending; assert.equal(emits, 0);
 });
+
+test('same-version reload preserves pending draft without conflict; committed is separate',async()=>{
+ const saver=new PreferenceSaver(()=>{}, {get:async()=>({preferences:{...prefs,pronunciation:'en-US'},version:1}),save:async body=>({preferences:body.preferences,version:2})});
+ await saver.load();saver.edit({...saver.state.draft!,theme:'dark'});await saver.load();assert.equal(saver.state.status,'unsynced');assert.equal(saver.state.draft?.theme,'dark');assert.equal(saver.state.committed?.preferences.theme,'warm');await saver.flushAll();assert.equal(saver.state.committed?.preferences.theme,'dark');assert.equal(saver.state.committed?.preferences.pronunciation,'en-US');saver.dispose();
+});
+test('reload crossing a PUT cannot overwrite a newer committed version',async()=>{
+ let finishGet:(v:View)=>void=()=>{},reads=0;const saver=new PreferenceSaver(()=>{}, {get:async()=>{reads++;if(reads===2)return new Promise<View>(r=>{finishGet=r;});return {preferences:prefs,version:reads>2?2:1};},save:async body=>({preferences:body.preferences,version:2})});
+ await saver.load();const refresh=saver.load();saver.edit({...prefs,fontSize:24});await saver.flush();finishGet({preferences:prefs,version:1});await refresh;assert.equal(saver.state.committed?.version,2);saver.dispose();
+});
+test('different server version conflicts and failed conflict refresh never allows blind save',async()=>{
+ let reads=0;const saver=new PreferenceSaver(()=>{}, {get:async()=>({preferences:{...prefs,theme:'white'},version:++reads}),save:async()=>{throw new ApiError(409,'SETTINGS_CONFLICT','conflict');}});
+ await saver.load();saver.edit({...prefs,fontSize:24});await saver.load();assert.equal(saver.state.status,'conflict');assert.equal(saver.state.draft?.fontSize,24);saver.resolve(false);assert.equal(saver.state.draft?.theme,'white');assert.equal(saver.state.committed?.version,2);saver.dispose();
+});
+
+test('failed refresh of clean preferences retries GET instead of a no-op save',async()=>{
+ let reads=0,saves=0;const saver=new PreferenceSaver(()=>{}, {get:async()=>{if(++reads===2)throw Error('offline');return {preferences:prefs,version:1};},save:async body=>{saves++;return {preferences:body.preferences,version:2};}});
+ await saver.load();await saver.load();assert.equal(saver.state.status,'unsynced');saver.retry();await settle();assert.equal(reads,3);assert.equal(saves,0);assert.equal(saver.state.status,'saved');saver.dispose();
+});

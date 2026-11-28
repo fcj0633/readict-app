@@ -1,210 +1,56 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import BookCard from './BookCard';
-import { createImport, fetchImport, listBooks, newRequestId, removeBook } from './api';
-import type { Book, ImportTask, Shelf } from './model';
-import { errorMessage, isTerminal, localFileError, pollDelay, stageLabel, uploadProgress } from './model';
+import {useCallback,useEffect,useRef,useState} from 'react';
+import {useNavigate} from 'react-router-dom';
+import {Plus,Search,BookOpen,ArrowRight,FileUp} from 'lucide-react';
+import {Dialog} from '../../components/ui/Dialog';
+import {readerPath} from '../../app/routes';
+import BookCard,{BookCover} from './BookCard';
+import {createImport,fetchImport,listBooks,newRequestId,removeBook} from './api';
+import {localFileError,isTerminal,pollDelay,stageLabel,uploadProgress,errorMessage,type Book,type ImportTask} from './model';
+import {appendPage,findContinue,progressPercent} from './shelf-model';
+import {loadManifest,loadProgress} from '../reader/api';
 import './library.css';
-
-type Phase = 'idle' | 'uploading' | 'polling' | 'failed' | 'done';
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener('abort', () => { clearTimeout(timer); reject(Object.assign(new Error('aborted'), { name: 'AbortError' })); }, { once: true });
-  });
-}
-
-export default function BookshelfPage() {
-  const [shelf, setShelf] = useState<Shelf | null>(null);
-  const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [progress, setProgress] = useState(0);
-  const [task, setTask] = useState<ImportTask | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Book | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const navigate = useNavigate();
-  const generation = useRef(0);
-  const request = useRef<AbortController | undefined>(undefined);
-  const key = useRef<string | null>(null);
-  const picker = useRef<HTMLInputElement | null>(null);
-
-  const load = useCallback(async (text: string) => {
-    const current = ++generation.current;
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setLoading(true);
-    try {
-      const value = await listBooks(text, null, controller.signal);
-      if (current !== generation.current || controller.signal.aborted) return;
-      setShelf(value);
-      setError(null);
-    } catch (caught) {
-      if (current !== generation.current || controller.signal.aborted) return;
-      setError(caught instanceof Error ? caught.message : '书架加载失败');
-    } finally {
-      if (current === generation.current) setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => { void load(query); }, 250);
-    return () => clearTimeout(timer);
-  }, [query, load]);
-
-  useEffect(() => () => request.current?.abort(), []);
-
-  function choose(next: File | null) {
-    setNotice(null);
-    setLocalError(null);
-    setTask(null);
-    setPhase('idle');
-    setProgress(0);
-    key.current = next ? newRequestId() : null;
-    if (next) {
-      const problem = localFileError(next);
-      if (problem) { setFile(null); setLocalError(problem); return; }
-    }
-    setFile(next);
-  }
-
-  async function startImport() {
-    if (!file || !key.current) return;
-    const controller = new AbortController();
-    request.current?.abort();
-    request.current = controller;
-    setLocalError(null);
-    setPhase('uploading');
-    setProgress(0);
-    setTask(null);
-    try {
-      const created = await createImport(file, key.current,
-        (loaded, total) => setProgress(uploadProgress(loaded, total)), controller.signal);
-      setTask(created);
-      if (isTerminal(created.state)) { await finish(created); return; }
-      if (!created.importId) { setPhase('failed'); setLocalError('导入任务未能创建，请重试'); return; }
-      setPhase('polling');
-      const began = Date.now();
-      while (!controller.signal.aborted) {
-        await sleep(pollDelay(Date.now() - began), controller.signal);
-        const next = await fetchImport(created.importId, controller.signal);
-        setTask(next);
-        if (isTerminal(next.state)) { await finish(next); return; }
-      }
-    } catch (caught) {
-      if ((caught as Error)?.name === 'AbortError') return;
-      setPhase('failed');
-      setLocalError(caught instanceof Error ? caught.message : errorMessage(undefined));
-    }
-  }
-
-  async function finish(result: ImportTask) {
-    if (result.state === 'SUCCEEDED') {
-      setPhase('done');
-      setNotice(result.reused ? '这本书已在书架中' : '导入完成');
-      setFile(null);
-      key.current = null;
-      await load(query);
-      return;
-    }
-    setPhase('failed');
-    setLocalError(errorMessage(result.error?.code));
-  }
-
-  function cancelImport() {
-    request.current?.abort();
-    setFile(null);
-    setTask(null);
-    key.current = null;
-    setPhase('idle');
-    setProgress(0);
-    setLocalError(null);
-  }
-
-  async function confirmDelete() {
-    if (!deleteTarget) return;
-    const target = deleteTarget;
-    setDeleteTarget(null);
-    try {
-      await removeBook(target.id, newRequestId());
-      setNotice('已从书架删除，已收藏的原文快照仍会保留');
-      await load(query);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '删除失败，请重试');
-    }
-  }
-
-  const dialogOpen = file !== null || phase !== 'idle';
-  const items = shelf?.items ?? [];
-
-  return <section className="shelf-content">
-    <div className="page-heading">
-      <div><p className="section-intro">我的书架</p><h1>把想读的书，放在手边。</h1></div>
-      <div className="shelf-tools">
-        <label className="search-field"><span>搜索</span>
-          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="书名或作者" maxLength={100} />
-        </label>
-        <button type="button" className="primary-button" onClick={() => picker.current?.click()}>导入 EPUB</button>
-        <input ref={picker} type="file" accept=".epub,application/epub+zip" hidden
-          onChange={event => { const next = event.target.files?.[0] ?? null; event.target.value = ''; choose(next); }} />
-      </div>
-    </div>
-
-    {notice && <p className="form-notice" role="status">{notice}</p>}
-    {error && <p className="form-error" role="alert">{error}</p>}
-    {localError && file === null && <p className="form-error" role="alert">{localError}</p>}
-
-    {loading && shelf === null && <p className="shelf-empty" role="status">正在加载书架…</p>}
-    {!loading && items.length === 0 && <div className="shelf-empty">
-      <p>{query.trim() ? '没有找到匹配的书。' : '书架还是空的。'}</p>
-      <p className="field-hint">支持 EPUB 2 与可重排 EPUB 3，单个文件不超过 25 MB。</p>
-    </div>}
-    {items.length > 0 && <div className="shelf-grid">
-      {items.map(book => <BookCard key={book.id} book={book}
-        onOpen={() => navigate(`/reader/${book.id}`)}
-        onDelete={setDeleteTarget}
-        onRetry={() => picker.current?.click()} />)}
-    </div>}
-
-    {dialogOpen && <div className="shelf-dialog-backdrop">
-      <div className="shelf-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title">
-        <h2 id="import-title">导入 EPUB</h2>
-        {file && <p className="dialog-file">{file.name} · {Math.max(1, Math.round(file.size / 1024))} KB</p>}
-        {phase === 'uploading' && <div className="import-progress" role="status" aria-live="polite">
-          正在上传 {progress}%<progress max={100} value={progress} />
-        </div>}
-        {phase === 'polling' && <div className="import-progress" role="status" aria-live="polite">
-          {task ? stageLabel(task.stage) : '正在排队'}<progress max={100} value={100} />
-        </div>}
-        {phase === 'done' && <p className="form-notice" role="status">导入完成，已加入书架。</p>}
-        {phase === 'failed' && <p className="form-error" role="alert">{localError ?? '导入失败，请重试'}</p>}
-        {phase !== 'done' && <p className="field-hint">导入期间可以关闭此窗口，任务会在后台继续。</p>}
-        <div className="dialog-actions">
-          {phase === 'uploading' || phase === 'polling'
-            ? <button type="button" className="secondary-button" onClick={cancelImport}>取消导入</button>
-            : <button type="button" className="secondary-button" onClick={() => { choose(null); setNotice(null); }}>关闭</button>}
-          {(phase === 'idle' || phase === 'failed') && file &&
-            <button type="button" className="primary-button" onClick={() => void startImport()}>
-              {phase === 'failed' ? '重新导入' : '开始导入'}
-            </button>}
-        </div>
-      </div>
-    </div>}
-
-    {deleteTarget && <div className="shelf-dialog-backdrop">
-      <div className="shelf-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title">
-        <h2 id="delete-title">删除《{deleteTarget.title}》？</h2>
-        <p>将删除原始文件与阅读资源，阅读进度一并清除；已收藏的单词和原文快照会保留。</p>
-        <div className="dialog-actions">
-          <button type="button" className="secondary-button" onClick={() => setDeleteTarget(null)}>取消</button>
-          <button type="button" className="danger-button" onClick={() => void confirmDelete()}>确认删除</button>
-        </div>
-      </div>
-    </div>}
-  </section>;
+const message=(e:unknown)=>e instanceof Error?e.message:'操作未完成，请重试';
+const pause=(ms:number,signal:AbortSignal)=>new Promise<void>((resolve,reject)=>{const timer=setTimeout(resolve,ms);signal.addEventListener('abort',()=>{clearTimeout(timer);reject(new DOMException('Aborted','AbortError'));},{once:true});});
+export default function BookshelfPage(){
+ const navigate=useNavigate(),[query,setQuery]=useState(''),[revision,setRevision]=useState(0);
+ const[items,setItems]=useState<Book[]>([]),[cursor,setCursor]=useState<string|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
+ const list=useRef<AbortController|null>(null),generation=useRef(0),moreLock=useRef(false);
+ const[recent,setRecent]=useState<{book:Book;chapter?:string}|null>(null),[recentLoading,setRecentLoading]=useState(true),[recentError,setRecentError]=useState('');
+ const[open,setOpen]=useState(false),[file,setFile]=useState<File|null>(null),[task,setTask]=useState<ImportTask|null>(null);
+ const[phase,setPhase]=useState<'idle'|'uploading'|'polling'|'failed'|'done'>('idle'),[progress,setProgress]=useState(0),[importError,setImportError]=useState('');
+ const importController=useRef<AbortController|null>(null),importKey=useRef<string|null>(null),importLock=useRef(false);
+ const[target,setTarget]=useState<{book:Book;key:string}|null>(null),[deleting,setDeleting]=useState(false),[deleteError,setDeleteError]=useState(''),[notice,setNotice]=useState('');
+ const deleteLock=useRef(false),alive=useRef(true),refresh=useCallback(()=>setRevision(n=>n+1),[]);
+ useEffect(()=>{alive.current=true;return()=>{alive.current=false;importController.current?.abort();};},[]);
+ useEffect(()=>{const current=++generation.current;list.current?.abort();const controller=new AbortController();list.current=controller;moreLock.current=false;setLoading(true);setError('');setItems([]);setCursor(null);
+ const timer=setTimeout(()=>{void listBooks(query.trim(),null,controller.signal).then(page=>{if(current!==generation.current||controller.signal.aborted)return;setItems(appendPage([],page,null));setCursor(page.nextCursor);}).catch(e=>{if(!controller.signal.aborted&&current===generation.current)setError(message(e));}).finally(()=>{if(!controller.signal.aborted&&current===generation.current)setLoading(false);});},250);
+ return()=>{clearTimeout(timer);controller.abort();};},[query,revision]);
+ useEffect(()=>{const controller=new AbortController();setRecentLoading(true);setRecentError('');
+ void(async()=>{try{const book=await findContinue(c=>listBooks('',c,controller.signal),controller.signal);if(controller.signal.aborted)return;setRecent(book?{book}:null);
+ if(book&&book.progressRatio!==null){try{const[p,m]=await Promise.all([loadProgress(book.id,controller.signal),loadManifest(book.id,controller.signal)]);const a=p.progress?.anchor;const chapter=a&&a.artifactId===m.artifactId&&a.artifactHash===m.artifactHash&&a.pipelineVersion===m.pipelineVersion?m.spine.find(s=>s.href===a.spineHref)?.title:undefined;if(!controller.signal.aborted)setRecent({book,chapter});}catch{/* Optional chapter details do not block reading. */}}
+ }catch(e){if(!controller.signal.aborted)setRecentError(message(e));}finally{if(!controller.signal.aborted)setRecentLoading(false);}})();return()=>controller.abort();},[revision]);
+ useEffect(()=>{window.addEventListener('focus',refresh);return()=>window.removeEventListener('focus',refresh);},[refresh]);
+ async function more(){if(!cursor||moreLock.current||loading)return;moreLock.current=true;setLoading(true);setError('');const current=generation.current;
+ try{const page=await listBooks(query.trim(),cursor,list.current?.signal);if(current!==generation.current)return;setItems(appendPage(items,page,cursor));setCursor(page.nextCursor);}catch(e){if(current===generation.current&&!list.current?.signal.aborted)setError(message(e));}finally{if(current===generation.current){moreLock.current=false;setLoading(false);}}}
+ function choose(next:File|null){if(importLock.current)return;const problem=next?localFileError(next):null;setImportError(problem||'');if(problem)return;setFile(next);setTask(null);importKey.current=next?newRequestId():null;setPhase('idle');setProgress(0);}
+ async function start(){if(!file||!importKey.current||importLock.current)return;const controller=new AbortController();importController.current=controller;importLock.current=true;setImportError('');
+ try{let current=task;if(current?.state==='FAILED'){importKey.current=newRequestId();current=null;}if(!current){setPhase('uploading');current=await createImport(file,importKey.current!, (loaded,total)=>{if(!controller.signal.aborted)setProgress(uploadProgress(loaded,total));},controller.signal);if(controller.signal.aborted)return;setTask(current);}
+ const began=Date.now();while(!isTerminal(current.state)){setPhase('polling');if(!current.importId)throw Error('导入任务不可用，请重试');await pause(pollDelay(Date.now()-began),controller.signal);current=await fetchImport(current.importId,controller.signal);if(controller.signal.aborted)return;setTask(current);}
+ if(current.state==='SUCCEEDED'){setPhase('done');setNotice(current.reused?'这本书已在书架中':'导入完成');setFile(null);importKey.current=null;refresh();}else{setPhase('failed');setImportError(errorMessage(current.error?.code));}
+ }catch(e){if(!controller.signal.aborted&&alive.current){setPhase('failed');setImportError(message(e));}}finally{if(importController.current===controller)importLock.current=false;}}
+ function closeImport(){importController.current?.abort();importLock.current=false;if(phase==='uploading'){setNotice('已停止本次客户端等待，服务端可能已收到文件；可再次打开窗口重试。');setPhase('failed');}else if(phase==='polling'){setNotice('导入任务在后台继续，可再次打开窗口查看。');setPhase('idle');refresh();}setOpen(false);}
+ async function confirmDelete(){if(!target||deleteLock.current)return;deleteLock.current=true;setDeleting(true);setDeleteError('');
+ try{await removeBook(target.book.id,target.key);if(!alive.current)return;setTarget(null);setNotice('已从书架移除，收藏快照保留；文件将在后台清理。');refresh();}catch(e){if(alive.current)setDeleteError(message(e));}finally{deleteLock.current=false;if(alive.current)setDeleting(false);}}
+ const book=recent?.book,percent=book?progressPercent(book.progressRatio):null;
+ return <section className="quiet-library"><div className="ql-page-heading"><div className="ql-title"><h1>我的书架</h1><span>你的原版阅读空间</span></div><button className="secondary-button" onClick={()=>setOpen(true)}><Plus size={17}/>{file?'查看导入':'导入 EPUB'}</button></div>
+ {notice&&<p role="status" className="form-notice">{notice}</p>}{recentLoading&&!recent&&<p role="status">正在寻找上次阅读…</p>}{recentError&&<p role="alert">{recentError}<button onClick={refresh}>重试继续阅读</button></p>}
+ {book&&<section className="ql-continue"><button className="ql-continue-cover" onClick={()=>navigate(readerPath(book.id))} aria-label={'继续阅读 '+book.title}><BookCover book={book}/></button><div className="ql-continue-info"><p className="ql-section-label">{book.progressRatio===null?'开启一段新的阅读':'继续阅读'}</p><h2>{book.title}</h2><p className="ql-continue-author">{book.author||'作者未知'}</p>{recent?.chapter&&<p className="ql-location"><BookOpen size={15}/>上次读到 <span>{recent.chapter}</span></p>}{percent!==null&&<div className="ql-continue-progress"><progress max={100} value={percent}/><span>已读 {percent}%</span></div>}</div><button className="primary-button ql-resume-button" onClick={()=>navigate(readerPath(book.id))}>{book.progressRatio===null?'开始阅读':'继续阅读'}<ArrowRight size={17}/></button></section>}
+ <section className="ql-shelf"><div className="ql-shelf-heading"><div><h2>全部书籍</h2><span>{cursor?'已加载 '+items.length+' 本':(query.trim()?'找到 ':'')+items.length+' 本'}</span></div><label className="ql-search"><Search size={17}/><input aria-label="搜索书籍" placeholder="搜索书名或作者" maxLength={100} value={query} onChange={e=>setQuery(e.target.value)}/>{query&&<button aria-label="清除搜索" onClick={()=>setQuery('')}>×</button>}</label></div>
+ {error&&<p role="alert" className="form-error">{error}<button onClick={()=>cursor?void more():refresh()}>重试书架</button></p>}{loading&&!items.length&&<p role="status">正在加载书架…</p>}
+ {!loading&&!error&&!items.length&&<div className="ql-empty"><BookOpen size={36} strokeWidth={1.1}/><h3>{query.trim()?'没有找到这本书':'你的书架，始于一本好书'}</h3><p>{query.trim()?'试试其他书名，或搜索作者的名字。':'导入一本 EPUB，把阅读的时间留给自己。'}</p><button className="secondary-button" onClick={()=>query.trim()?setQuery(''):setOpen(true)}>{query.trim()?'清除搜索':'导入 EPUB'}</button></div>}
+ {!!items.length&&<div className="ql-book-grid">{items.map(b=><BookCard key={b.id} book={b} onOpen={b=>navigate(readerPath(b.id))} onDelete={b=>{setDeleteError('');setTarget({book:b,key:newRequestId()});}} onRetry={()=>setOpen(true)}/>)}</div>}{cursor&&<button className="secondary-button load-more" disabled={loading} onClick={()=>void more()}>{loading?'正在加载…':'加载更多'}</button>}</section>
+ <Dialog open={open} onClose={closeImport} title="导入 EPUB" description="支持可重排 EPUB 2 / EPUB 3，单个文件不超过 25 MiB。"><div className="import-drop" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(e.dataTransfer.files.length!==1){setImportError('请一次选择一本 EPUB');return;}choose(e.dataTransfer.files[0]||null);}}><FileUp size={32}/><label>选择文件或拖放到这里<input type="file" accept=".epub,application/epub+zip" disabled={phase==='uploading'||phase==='polling'} onChange={e=>{choose(e.target.files?.[0]||null);e.target.value='';}}/></label></div>{file&&<p className="dialog-file">{file.name} · {(file.size/1024).toFixed(1)} KiB</p>}
+ {phase==='uploading'&&<p role="status">正在上传 {progress}%<progress max={100} value={progress}/></p>}{phase==='polling'&&<p role="status">{task?stageLabel(task.stage):'正在排队'}<progress/></p>}{phase==='done'&&<p role="status" className="form-success">导入完成，已加入书架。</p>}{importError&&<p role="alert" className="form-error">{importError}</p>}<p className="field-hint">关闭窗口只停止客户端等待，已接收的任务可能在后台继续。</p><div className="dialog-actions"><button className="secondary-button" onClick={closeImport}>关闭</button>{file&&phase!=='uploading'&&phase!=='polling'&&<><button className="secondary-button" onClick={()=>choose(null)}>放弃本次尝试</button><button className="primary-button" onClick={()=>void start()}>{task?.state==='FAILED'?'重新导入':task?.importId?'查看进度':phase==='failed'?'重试上传':'开始导入'}</button></>}</div></Dialog>
+ <Dialog open={!!target} onClose={()=>setTarget(null)} busy={deleting} title={'删除《'+(target?.book.title||'')+'》？'} description="将移除书籍、原始文件和阅读进度，已收藏的单词与原文快照会保留。">{deleteError&&<p role="alert" className="form-error">{deleteError}</p>}<div className="dialog-actions"><button className="secondary-button" disabled={deleting} onClick={()=>setTarget(null)}>取消</button><button className="danger-button" disabled={deleting} onClick={()=>void confirmDelete()}>{deleting?'正在删除…':'确认删除'}</button></div></Dialog>
+ </section>;
 }

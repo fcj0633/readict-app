@@ -1,25 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
-import { useAuth } from '../auth/AuthProvider';
-import { PreferenceSaver, type SaveState, type Preferences } from './model';
-
-export default function SettingsPage() {
-  const auth = useAuth(); const saver = useRef<PreferenceSaver | undefined>(undefined); const [state, setState] = useState<SaveState>({ status: 'loading' });
-  useEffect(() => { const instance = new PreferenceSaver(setState, undefined, view => { auth.announce('settings'); window.dispatchEvent(new CustomEvent('readict-settings-saved', { detail: view.preferences.theme })); }); saver.current = instance; void instance.load(); return () => { instance.dispose(); window.dispatchEvent(new Event('readict-preview-ended')); }; }, [auth.user?.id]);
-  const previousRevision = useRef(auth.revision);
-  useEffect(() => { if (previousRevision.current !== auth.revision) { previousRevision.current = auth.revision; void saver.current?.load(); } }, [auth.revision]);
-  useEffect(() => { if (state.draft) document.documentElement.dataset.theme = state.draft.theme; }, [state.draft?.theme]);
-  function edit<K extends keyof Preferences>(key: K, value: Preferences[K]) { if (state.draft) saver.current?.edit({ ...state.draft, [key]: value }); }
-  const p = state.draft;
-  return <section className="account-content"><div className="page-heading"><div><p className="section-intro">个人偏好</p><h1>让阅读更合心意。</h1></div><p className="save-status" role="status">{({ loading: '正在读取…', saved: '已同步', saving: '正在保存…', unsynced: '尚未同步', conflict: '需要处理冲突' })[state.status]}</p></div>
-    {state.error && <p className="form-error" role="alert">{state.error}</p>}{state.status === 'unsynced' && <button className="secondary-button" onClick={() => saver.current?.retry()}>重新同步</button>}
-    {state.status === 'conflict' && <div className="conflict-actions"><button onClick={() => saver.current?.resolve(false)}>加载服务器设置</button><button onClick={() => saver.current?.resolve(true)}>保留草稿并重新保存</button></div>}
-    {p && <div className="settings-layout"><div className="settings-controls">
-      <label htmlFor="font">字体</label><select id="font" value={p.font} onChange={e => edit('font', e.target.value)}><option>Georgia</option><option>Palatino Linotype</option><option>Arial</option></select>
-      <label htmlFor="font-size">字号</label><select id="font-size" value={p.fontSize} onChange={e => edit('fontSize', Number(e.target.value))}>{[18, 20, 22, 24].map(v => <option key={v}>{v}</option>)}</select>
-      <label htmlFor="line-height">行距</label><select id="line-height" value={p.lineHeight} onChange={e => edit('lineHeight', Number(e.target.value))}>{[1.6, 1.8, 2].map(v => <option key={v}>{v}</option>)}</select>
-      <label htmlFor="width">内容宽度</label><select id="width" value={p.width} onChange={e => edit('width', Number(e.target.value))}><option value="660">适中</option><option value="720">宽松</option></select>
-      <label htmlFor="theme">主题</label><select id="theme" value={p.theme} onChange={e => edit('theme', e.target.value)}><option value="white">清白</option><option value="warm">暖纸</option><option value="dark">夜读</option></select>
-      <label htmlFor="pronunciation">发音偏好</label><select id="pronunciation" value={p.pronunciation} onChange={e => edit('pronunciation', e.target.value)}><option value="en-GB">英式英语</option><option value="en-US">美式英语</option></select><p className="field-hint">仅保存偏好，音频功能尚未接入。</p>
-    </div><div className="reading-preview"><p className="section-intro">效果预览</p><article style={{ fontFamily: `${p.font}, ${p.font === 'Arial' ? 'sans-serif' : 'serif'}`, fontSize: p.fontSize, lineHeight: p.lineHeight, maxWidth: p.width }}><h2>A quiet moment</h2><p>There is a pleasure in opening a book and finding a sentence that stays with you. Read slowly. Let the words make room for a new thought.</p></article><p className="field-hint">预览随设置即时变化，修改会自动同步到你的账号。</p></div></div>}
-  </section>;
+import {Link} from 'react-router-dom';
+import {BookOpen,ArrowLeft,Check} from 'lucide-react';
+import {useReadingPreferences,type ReadingPatch} from './PreferencesProvider';
+import type {Preferences} from './model';
+import './settings.css';
+const groups=[
+ {key:'font',label:'正文字体',values:[['Georgia','Georgia'],['Palatino Linotype','Palatino'],['Arial','Arial']]},
+ {key:'fontSize',label:'字号',values:[[18,'18 px'],[20,'20 px'],[22,'22 px'],[24,'24 px']]},
+ {key:'lineHeight',label:'行距',values:[[1.6,'1.6 倍'],[1.8,'1.8 倍'],[2,'2.0 倍']]},
+ {key:'width',label:'正文宽度',values:[[660,'660 px'],[720,'720 px']]},
+ {key:'theme',label:'阅读纸面',values:[['white','白色'],['warm','暖纸'],['dark','夜读']]},
+] as const;
+export default function SettingsPage(){
+ const{state,editReading,retry,resolve}=useReadingPreferences(),p=state.draft;
+ const status=({loading:'正在读取…',saved:'已同步',saving:'正在保存…',unsynced:'尚未同步',conflict:'需要处理冲突'})[state.status];
+ return <section className="reading-settings"><div className="settings-heading member-heading"><div><h1>阅读设置</h1><p>选择适合你的字体与阅读纸面。</p></div><span role="status"><Check size={15}/>{status}</span></div>
+ {state.error&&<p className="form-error" role="alert">{state.error}</p>}{state.status==='unsynced'&&<button className="secondary-button" onClick={retry}>重新同步</button>}{state.status==='conflict'&&<div className="settings-conflict" role="alert"><p>设置已在其他页面更新，当前修改已保留。</p>{state.server?<><button className="secondary-button" onClick={()=>resolve(false)}>使用已保存设置</button><button className="primary-button" onClick={()=>resolve(true)}>保留当前修改并重新保存</button></>:<button className="secondary-button" onClick={retry}>重新读取冲突版本</button>}</div>}
+ <div className="reading-settings-layout"><aside className="reading-settings-nav"><span><BookOpen size={18}/>阅读设置</span><Link to="/account"><ArrowLeft size={15}/>个人账户</Link></aside>{p?<div className="reading-settings-main"><div className="reading-controls">{groups.map(group=><fieldset key={group.key}><legend>{group.label}</legend><div className={'reading-options options-'+group.key}>{group.values.map(([value,label])=><button type="button" key={value} aria-label={String(label)} aria-pressed={p[group.key]===value} onClick={()=>editReading({[group.key]:value} as ReadingPatch)}>{group.key==='font'&&<span className="font-sample" style={{fontFamily:String(value)}}>Aa</span>}{group.key==='theme'&&<span className="paper-swatch" data-theme={value}>The quiet<br/>of a page.</span>}<span>{label}</span></button>)}</div></fieldset>)}</div><ReadingPreview preferences={p}/></div>:<p role="status">正在读取阅读设置…</p>}</div></section>;
+}
+export function ReadingPreview({preferences:p}:{preferences:Preferences}){
+ return <section className="reading-preview-section"><div className="preview-label"><span>阅读预览</span><span>即时呈现你的偏好</span></div><div className="reading-preview" data-theme={p.theme} style={{fontFamily:p.font,fontSize:p.fontSize,lineHeight:p.lineHeight}}><article style={{width:p.width===720?'100%':'91.67%'}}><p className="preview-book-label">A quiet moment</p><h2>Chapter One</h2><p>There is a pleasure in opening a book and finding a sentence that stays with you.</p><p>Read slowly. Let the words make room for a new thought. The quiet of a page offers a little space to notice what matters.</p></article><small>1</small></div><p className="preview-note">此段文字仅用于排版预览。</p></section>;
 }

@@ -59,10 +59,11 @@ export function decodeImport(body: unknown): ImportTask {
   };
 }
 
-export function listBooks(query: string, cursor: string | null, signal?: AbortSignal): Promise<Shelf> {
+export function listBooks(query: string, cursor: string | null, signal?: AbortSignal, limit?: number): Promise<Shelf> {
   const params = new URLSearchParams();
   if (query.trim().length > 0) params.set('q', query.trim());
   if (cursor) params.set('cursor', cursor);
+  if (limit) params.set('limit', String(limit));
   const suffix = params.toString();
   return request('/books' + (suffix ? '?' + suffix : ''), decodeShelf, { signal });
 }

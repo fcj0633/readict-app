@@ -1,4 +1,5 @@
-import { ArrowLeft, BookOpen, Bookmark, List, Settings2 } from 'lucide-react';
+import { ArrowLeft, Bookmark, List, Settings2 } from 'lucide-react';
+import {Brand} from '../../components/ui/Brand';
 import type { ProgressStatus } from './progress/model';
 
 export type ReaderPanelName = 'none' | 'contents' | 'settings';
@@ -7,7 +8,7 @@ export function ReaderTopbar({ onBack }: {
   onBack: () => void;
 }) {
   return <header className="reader-topbar">
-    <span className="reader-brand"><BookOpen size={25} strokeWidth={1.4} aria-hidden="true" />Readict</span>
+    <span className="reader-brand"><Brand compact/></span>
     <span className="reader-brand-divider" aria-hidden="true" />
     <button type="button" className="reader-back" onClick={onBack} aria-label="返回书架">
       <ArrowLeft size={16} strokeWidth={1.7} aria-hidden="true" />

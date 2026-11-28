@@ -1,33 +1,10 @@
-import type { Book } from './model';
-import { bookStatusLabel, canOpen, canRetry, coverInitial, formatDate } from './model';
-
-interface Props {
-  book: Book;
-  onOpen: (book: Book) => void;
-  onDelete: (book: Book) => void;
-  onRetry: (book: Book) => void;
-}
-
-export default function BookCard({ book, onOpen, onDelete, onRetry }: Props) {
-  const ready = canOpen(book.status);
-  return <article className="shelf-card">
-    <div className="shelf-cover" aria-hidden="true">
-      {book.coverUrl
-        ? <img src={book.coverUrl} alt="" onError={event => { (event.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-        : <span>{coverInitial(book.title)}</span>}
-    </div>
-    <div className="shelf-meta">
-      <h2>{book.title}</h2>
-      <p className="shelf-author">{book.author ?? '作者未知'}</p>
-      <p className={`shelf-status shelf-status-${book.status.toLowerCase()}`}>{bookStatusLabel(book.status)}</p>
-      <p className="shelf-date">最近阅读 {formatDate(book.lastReadAt)}</p>
-      {book.progressRatio !== null && <p className="shelf-progress">已读 {Math.round(book.progressRatio * 100)}%</p>}
-      <div className="shelf-actions">
-        <button type="button" onClick={() => onOpen(book)} disabled={!ready}
-          title={ready ? '阅读器尚未接入，M04 开放' : '书籍尚不可阅读'}>打开</button>
-        {canRetry(book.status) && <button type="button" className="secondary-button" onClick={() => onRetry(book)}>重新导入</button>}
-        <button type="button" className="link-button" onClick={() => onDelete(book)}>删除</button>
-      </div>
-    </div>
-  </article>;
+import {useState} from 'react';
+import {BookOpen,Trash2} from 'lucide-react';
+import type {Book} from './model';
+import {bookStatusLabel,canOpen,canRetry} from './model';
+import {coverPath,progressPercent} from './shelf-model';
+export function BookCover({book}:{book:Book}){const[failed,setFailed]=useState(false),src=coverPath(book);return src&&!failed?<img src={src} alt={book.title+' 封面'} onError={()=>setFailed(true)}/>:<span className="cover-placeholder" role="img" aria-label={book.title+' 暂无封面'}><BookOpen size={32} strokeWidth={1.2}/><span>{book.title}</span></span>;}
+export default function BookCard({book,onOpen,onDelete,onRetry}:{book:Book;onOpen:(b:Book)=>void;onDelete:(b:Book)=>void;onRetry:(b:Book)=>void}){
+ const ready=canOpen(book.status),percent=progressPercent(book.progressRatio);
+ return <article className="ql-book"><div className="ql-cover-stage"><button className="ql-cover" disabled={!ready} onClick={()=>onOpen(book)} aria-label={'阅读 '+book.title}><BookCover book={book}/><span className="ql-cover-action"><BookOpen size={20}/>翻开这本书</span></button><button className="ql-delete" aria-label={'删除 '+book.title} onClick={()=>onDelete(book)}><Trash2 size={15}/></button></div><button className="ql-book-title" disabled={!ready} onClick={()=>onOpen(book)} title={book.title}><h3>{book.title}</h3></button><p className="ql-book-author">{book.author||'作者未知'}</p><p className="ql-book-status">{ready?book.progressRatio===null?'未开始':percent===null?'阅读进度未知':'阅读中 · '+percent+'%':bookStatusLabel(book.status)}</p>{ready&&percent!==null&&<progress max={100} value={percent} aria-label={book.title+' 阅读进度'}/>} {canRetry(book.status)&&<button className="link-button" onClick={()=>onRetry(book)}>重新导入</button>}</article>;
 }

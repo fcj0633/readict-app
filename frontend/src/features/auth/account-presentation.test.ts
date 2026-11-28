@@ -1,0 +1,4 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {accountPresentation,profileCapabilities,maskedContact} from './AccountPresentation';
+test('contact verification remains independent and missing profile capabilities stay unavailable',()=>{const v=accountPresentation({id:'id',email:'reader@example.invalid',phone:null,emailVerified:false,phoneVerified:true});assert.deepEqual(v.email,{kind:'bound',value:'reader@example.invalid',verified:false});assert.deepEqual(v.phone,{kind:'unbound'});assert.equal(v.avatarUrl,undefined);assert.ok(Object.values(profileCapabilities).every(v=>v===false));});
+
+test('menu contact masking also covers single-character email names and fixed country phone',()=>{const u={id:'id',email:'a@example.invalid',phone:null,emailVerified:false,phoneVerified:false};assert.equal(maskedContact(u),'a***@example.invalid');assert.equal(maskedContact({...u,email:null,phone:'+8613812345678'}),'+86138****5678');});

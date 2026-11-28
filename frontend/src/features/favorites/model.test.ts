@@ -14,7 +14,9 @@ test('deleted receipt preserves identifiers without restoring active state', () 
 });
 test('return links only accept matching UUID query pairs and local reader paths', () => {
   assert.deepEqual(favoriteTarget(`?favorite=${f}&context=${c}`), { favoriteId: f, contextId: c });
-  assert.throws(() => favoriteTarget(`?favorite=${f}`));
+  assert.equal(favoriteTarget(`?favorite=${f}`),null);
+  assert.equal(favoriteTarget(`?favorite=${f}&favorite=${c}&context=${c}`),null);
+  assert.equal(favoriteTarget(`?favorite=${f}&context=invalid`),null);
   assert.equal(returnPath('https://example.com'), null); assert.equal(returnPath('//evil.test'), null);
   assert.equal(returnPath(`/reader/${f}`), `/reader/${f}`);
 });

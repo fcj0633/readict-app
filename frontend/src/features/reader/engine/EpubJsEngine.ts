@@ -304,7 +304,8 @@ export class EpubJsEngine implements ReaderEngine {
   private async contentMatches(anchor: ReadingAnchor): Promise<boolean> {
     const location = this.lastLocation;
     if (!location) return false;
-    const range = this.rangeFor(location.start.cfi);
+    // Validate the saved CFI itself; pagination may place the page start before this sentence.
+    const range = this.rangeFor(anchor.cfi);
     const root = this.docRoot();
     if (!range || !root) return false;
     const global = globalOffsetOf(root, range.startContainer, range.startOffset);
@@ -312,6 +313,7 @@ export class EpubJsEngine implements ReaderEngine {
     const href = this.mapSpineHref(location.start.href);
     if (!href || href !== anchor.spineHref) return false;
     const chapter = await this.chapterBlocks(href);
+    if (!chapter.verified) return false;
     const position = locate(chapter.blocks, global);
     if (!position) return false;
     if (!anchor.quote) return true;

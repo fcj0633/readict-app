@@ -2,3 +2,15 @@
 
 /* Keep the compact search row independent of account form defaults. */
 .account-shell .favorites-search{flex-direction:row;margin:0}.account-shell .favorites-search input{border:0;background:none;padding:10px 0;min-height:42px}.account-shell .favorites-controls select{width:auto}.account-shell .favorites-search button{flex-shrink:0}
+/* UX-U03 neutral application surface; reader favorite controls keep their local palette. */
+.app-shell .favorites-page{max-width:1200px;padding:8px 0 50px;color:var(--ink)}
+.app-shell .favorites-heading h1{font-size:28px;letter-spacing:-1px;margin-bottom:8px;font-weight:650}
+.app-shell .favorites-heading p{font-size:13px}.app-shell .favorites-heading>span{font-size:12px}
+.app-shell .favorite-words{grid-template-columns:1fr;gap:12px}.app-shell .favorite-word{border-color:var(--line);padding:22px 26px}
+.app-shell .favorite-word h2{font-size:26px}.app-shell .favorite-word>div:first-child{display:flex;align-items:baseline;gap:18px}
+.app-shell .favorite-word p{margin:6px 0 12px}.app-shell .favorite-word-foot{font-size:12px}.app-shell .favorite-word-foot button{color:var(--green)}
+.app-shell .favorites-tabs button[aria-pressed=true]{background:var(--green)}.app-shell .favorites-search input{border:0;padding:10px 0}.app-shell .favorite-sentences>.favorite-context{padding:24px;background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:14px}
+.app-dialog.favorite-detail-dialog{max-width:760px}.favorite-detail-dialog .favorite-context{padding:20px 0}.favorite-detail-dialog .favorite-context-foot a{color:var(--green)}
+@media(max-width:600px){.app-shell .favorites-heading{margin-bottom:24px}.app-shell .favorites-heading h1{font-size:26px}.app-shell .favorite-word{padding:20px}.app-shell .favorite-sentences>.favorite-context{padding:20px}.favorites-controls select{width:100%}.favorites-heading>span{overflow-wrap:anywhere}}
+
+.app-shell .favorites-search button{flex-shrink:0;white-space:nowrap}.app-shell .favorites-search{min-height:44px}.app-shell .favorites-search input{width:100%;border:0;min-width:0}.app-shell .favorites-controls select{max-width:240px}

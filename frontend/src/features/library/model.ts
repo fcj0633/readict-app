@@ -40,12 +40,12 @@ export function stageLabel(stage: ImportTask['stage']): string { return STAGE_LA
 export function localFileError(file: { name: string; size: number }): string | null {
   if (!file.name.toLowerCase().endsWith('.epub')) return '请选择 .epub 格式的电子书';
   if (file.size <= 0) return '文件为空，请重新选择';
-  if (file.size > MAX_UPLOAD_BYTES) return '文件超过 25 MB 上限，无法导入';
+  if (file.size > MAX_UPLOAD_BYTES) return '文件超过 25 MiB 上限，无法导入';
   return null;
 }
 
 const ERROR_COPY: Record<string, string> = {
-  UPLOAD_TOO_LARGE: '文件超过 25 MB 上限，无法导入',
+  UPLOAD_TOO_LARGE: '文件超过 25 MiB 上限，无法导入',
   EPUB_FILE_TYPE_REQUIRED: '请选择 .epub 格式的电子书',
   EPUB_INVALID_ZIP: '文件不是有效的 EPUB，请换一个文件',
   EPUB_INVALID_MIMETYPE: '文件不是有效的 EPUB，请换一个文件',

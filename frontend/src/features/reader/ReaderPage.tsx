@@ -5,7 +5,8 @@ import { ApiError } from '../../lib/api';
 import { request } from '../../lib/http';
 import { useAuth } from '../auth/AuthProvider';
 import { decodeBook } from '../library/api';
-import { PreferenceSaver, settingsApi, type Preferences, type SaveState } from '../settings/model';
+import {type Preferences} from '../settings/model';
+import {useReadingPreferences} from '../settings/PreferencesProvider';
 import { downloadEpub, loadChapterIndex, loadManifest, loadProgress } from './api';
 import { EpubJsEngine } from './engine/EpubJsEngine';
 import type {
@@ -56,7 +57,10 @@ export default function ReaderPage() {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<EpubJsEngine | null>(null);
   const saverRef = useRef<ProgressSaver | null>(null);
-  const settingsRef = useRef<PreferenceSaver | null>(null);
+  const shared = useReadingPreferences();
+  const settingsState = shared.state;
+  const releasePreview = shared.releaseReaderPreview;
+  useEffect(() => () => releasePreview(), [releasePreview]);
   const phaseRef = useRef<ReaderPhase>('idle');
   const appliedPrefs = useRef('');
   const lastAnchor = useRef<string | null>(null);
@@ -73,7 +77,6 @@ export default function ReaderPage() {
   const [boundary, setBoundary] = useState({ atStart: true, atEnd: false });
   const [panel, setPanel] = useState<ReaderPanelName>('none');
   const [progress, setProgress] = useState<ProgressState>(EMPTY_PROGRESS);
-  const [settingsState, setSettingsState] = useState<SaveState>({ status: 'loading' });
   const [reloadToken, setReloadToken] = useState(0);
   const [lookup, setLookup] = useState<{ selection: TextSelection; state: LookupViewState } | null>(null);
   const [activeRegion, setActiveRegion] = useState(0);
@@ -104,7 +107,6 @@ export default function ReaderPage() {
     const cleanups: (() => void)[] = [];
     let engine: EpubJsEngine | null = null;
     let saver: ProgressSaver | null = null;
-    let preferenceSaver: PreferenceSaver | null = null;
     enterPhase('loading');
     setError(null); setNotice(null); setFavoriteHighlight(null); setManifest(null); setProgress(EMPTY_PROGRESS);
     setPanel('none'); setSpineHref(null);
@@ -208,9 +210,6 @@ export default function ReaderPage() {
           setBoundary({ atStart: initialPage.atStart, atEnd: initialPage.atEnd });
         }
         enterPhase('ready');
-        preferenceSaver = new PreferenceSaver(setSettingsState, settingsApi);
-        settingsRef.current = preferenceSaver;
-        void preferenceSaver.load();
       } catch (caught) {
         if (controller.signal.aborted) return;
         const code = caught instanceof ApiError ? caught.code : 'ENGINE_INIT_FAILED';
@@ -224,15 +223,15 @@ export default function ReaderPage() {
       controller.abort();
       for (const cleanup of cleanups) cleanup();
       saverRef.current?.dispose(); saverRef.current = null;
-      settingsRef.current?.dispose(); settingsRef.current = null;
       engineRef.current = null;
       void engine?.destroy();
       enterPhase('idle');
     };
   }, [bookId, favoriteSearch, navigationState, auth.user?.id, reloadToken, enterPhase, syncDisplayedPage]);
 
+  const effectivePreferences = shared.origin === `reader:${bookId}` ? settingsState.draft : settingsState.committed && settingsState.committed.version >= (manifest?.settingsVersion ?? 0) ? settingsState.committed.preferences : undefined;
   useEffect(() => {
-    const draft = settingsState.draft;
+    const draft = effectivePreferences;
     const engine = engineRef.current;
     if (!draft || !engine || phaseRef.current !== 'ready') return;
     const next = toReaderPreferences(draft);
@@ -246,7 +245,7 @@ export default function ReaderPage() {
       if (anchor) await engine.display(anchor);
       syncDisplayedPage(engine);
     })();
-  }, [settingsState.draft, syncDisplayedPage]);
+  }, [effectivePreferences, phase, syncDisplayedPage]);
 
   useEffect(() => {
     const flush = () => { void saverRef.current?.flush(); };
@@ -355,7 +354,7 @@ export default function ReaderPage() {
     }
   }
 
-  const draft = settingsState.draft;
+  const draft = effectivePreferences;
   const theme = draft?.theme ?? manifest?.settings.theme ?? 'warm';
   const readingWidth = (draft?.width ?? manifest?.settings.width) === 720 ? 'wide' : 'standard';
   const tocTree = useMemo(() => groupToc(manifest?.toc ?? []), [manifest?.toc]);
@@ -388,7 +387,7 @@ export default function ReaderPage() {
         <div className="reader-paper-inner">
           <ReaderPaperHeading title={title} chapter={chapterLabel} />
           <ReaderRail active={panel} onToc={() => togglePanel('contents')}
-            onFavorites={() => { void saverRef.current?.flush(); navigate(`/favorites?from=${encodeURIComponent(`/reader/${bookId}`)}`, { state: { returnAnchor: engineRef.current?.anchor() } }); }} onSettings={() => togglePanel('settings')} />
+            onFavorites={() => { closeLookup(); void (async () => { await saverRef.current?.flush(); navigate(`/favorites?from=${encodeURIComponent(`/reader/${bookId}`)}`, { state: { returnAnchor: engineRef.current?.anchor() } }); })(); }} onSettings={() => togglePanel('settings')} />
           <div ref={hostRef} className="reader-canvas" data-phase={phase} />
           {progress.status === 'conflict' && <div className="reader-conflict" role="alert">
             <p>阅读位置已在其他窗口更新。</p>
@@ -422,14 +421,14 @@ export default function ReaderPage() {
         {panel === 'contents'
           ? <ContentsPanel toc={tocTree} spine={manifest?.spine ?? []}
               currentHref={spineHref} onSelect={href => void goToTocHref(href)} onClose={closePanel} />
-          : draft
-            ? <SettingsPanel draft={draft} state={settingsState}
-                onEdit={next => settingsRef.current?.edit(next)}
-                onRetry={() => settingsRef.current?.retry()}
-                onResolve={keep => settingsRef.current?.resolve(keep)}
+          : settingsState.draft
+            ? <SettingsPanel draft={settingsState.draft} state={settingsState}
+                onEdit={next => shared.editReading(next, `reader:${bookId}`)}
+                onRetry={() => shared.retry()}
+                onResolve={keep => shared.resolve(keep)}
                 onClose={closePanel} />
             : <div className="reader-panel reader-panel-loading" role="dialog" aria-label="阅读设置">
-                <p>正在读取阅读设置…</p>
+                <p>{settingsState.error || '正在读取阅读设置…'}</p><button type="button" className="reader-choice" onClick={shared.retry}>重新读取</button>
                 <button type="button" className="reader-choice" onClick={closePanel}>关闭</button>
               </div>}
       </>}

@@ -128,6 +128,10 @@ class FavoriteIT {
         var detail=queries.detail(seed.userId(),duplicate.favoriteId());
         assertThat(((Map<?,?>)detail.get("favorite")).get("meaning")).isEqualTo("first synthetic meaning");
         assertThat((List<?>)detail.get("contexts")).hasSize(1);
+        var context=(Map<?,?>)((List<?>)detail.get("contexts")).getFirst();
+        var anchor=(Map<?,?>)context.get("anchor");
+        assertThat(anchor.get("cfi")).isEqualTo(request.source().sentenceRangeCfi());
+        assertThat(anchor.get("cfi")).isNotEqualTo(request.source().wordRangeCfi());
     }
     @Test void receiptsReplayRejectDifferentPayloadAndNeverResurrect() throws Exception {
         Seed seed=seed(); var request=request(seed,4,"first"); UUID key=UUID.randomUUID();

@@ -1,3 +1,4 @@
+import {parseReaderPath, safeReturnTo} from '../../app/routes';
 import { ApiError } from '../../lib/api';
 import { object } from '../../lib/http';
 import type { ReadingAnchor } from '../reader/engine/types';
@@ -65,12 +66,12 @@ export function decodeStats(v: unknown): { words: number; contexts: number } {
   if (!object(v)) invalid(); return { words: count(v.words), contexts: count(v.contexts) };
 }
 export function contextLink(c: FavoriteContext): string | null {
-  return c.sourceAvailable && c.bookId && c.anchor ? `/reader/${c.bookId}?favorite=${c.favoriteId}&context=${c.contextId}` : null;
+  return c.sourceAvailable && c.bookId && c.anchor ? safeReturnTo(`/reader/${c.bookId}?favorite=${c.favoriteId}&context=${c.contextId}`) : null;
 }
-export function returnPath(from: string | null): string | null { return from && /^\/reader\/[0-9a-f-]{36}$/.test(from) ? from : null; }
+export function returnPath(from: string | null): string | null {return from ? parseReaderPath(from) : null;}
 export function favoriteTarget(search: string): { favoriteId: string; contextId: string } | null {
   const p = new URLSearchParams(search); const f = p.get('favorite'), c = p.get('context');
   if (!f && !c) return null;
-  if (!f || !c || !uuid.test(f) || !uuid.test(c)) throw new ApiError(400, 'INVALID_REQUEST', '收藏位置链接无效');
+  if (!f || !c || !uuid.test(f) || !uuid.test(c) || p.getAll('favorite').length !== 1 || p.getAll('context').length !== 1) return null;
   return { favoriteId: f, contextId: c };
 }

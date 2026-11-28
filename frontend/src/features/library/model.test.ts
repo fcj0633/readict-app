@@ -8,7 +8,7 @@ import {
 test('rejects wrong extension, empty and oversized files locally', () => {
   assert.equal(localFileError({ name: 'book.pdf', size: 1024 }), '请选择 .epub 格式的电子书');
   assert.equal(localFileError({ name: 'book.epub', size: 0 }), '文件为空，请重新选择');
-  assert.equal(localFileError({ name: 'book.epub', size: MAX_UPLOAD_BYTES + 1 }), '文件超过 25 MB 上限，无法导入');
+  assert.equal(localFileError({ name: 'book.epub', size: MAX_UPLOAD_BYTES + 1 }), '文件超过 25 MiB 上限，无法导入');
   assert.equal(localFileError({ name: 'BOOK.EPUB', size: 1024 }), null);
 });
 

@@ -32,4 +32,4 @@ export const completeReset = (resetToken: string, newPassword: string) => reques
 export function phoneInput(value: string) { return value.trim().startsWith('+86') ? value.trim().slice(3) : value; }
 export function passwordValid(value: string) { const size = Array.from(value).length; return size >= 8 && size <= 128 && new TextEncoder().encode(value).length <= 512 && /[0-9]/.test(value) && /[A-Za-z]/.test(value); }
 export const passwordHint = '密码不少于 8 位，且至少包含一个数字和一个英文字母';
-export function safeReturnTo(value: string | null) { return value && ['/account', '/settings'].includes(value) ? value : '/account'; }
+export { safeReturnTo } from '../../app/routes';
